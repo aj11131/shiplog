@@ -1,0 +1,5 @@
+﻿# Copy to terraform.tfvars (gitignored) and adjust.
+subscription_id    = "6defd2a7-df6b-4dba-97cc-f76f4813244d"
+location           = "centralus"
+github_subject_prefix = "repo:aj11131@54563379/shiplog@1407845180"
+github_environment = "dev"

@@ -1,0 +1,214 @@
+# Build the images, push them to ACR, and deploy to AKS with Helm.
+#
+# Triggers: app/chart changes merged to main, a successful Terraform Apply, or manually.
+# Runs as the apply identity in the "dev" environment (approval required).
+name: Deploy to AKS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "charts/**"
+      - "deploy/otel-collector/**"
+      - ".github/workflows/deploy-aks.yml"
+  workflow_run:
+    workflows: ["Terraform Apply"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-aks-dev
+  cancel-in-progress: false
+
+env:
+  TF_VERSION: 1.16.5
+  HELM_VERSION: v4.3.0
+  OTEL_CHART_VERSION: 0.175.1
+  ARM_USE_OIDC: "true"
+  ARM_CLIENT_ID: ${{ vars.AZURE_APPLY_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  TF_VAR_tfstate_resource_group: ${{ vars.TFSTATE_RESOURCE_GROUP }}
+  TF_VAR_tfstate_storage_account: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
+  IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+jobs:
+  deploy:
+    name: deploy · aks-dev
+    # After a Terraform Apply, only deploy if the apply succeeded.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.IMAGE_TAG }}
+
+      # ---- 1. Read infrastructure details from Terraform state -----------------
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Read Terraform outputs
+        id: tf
+        working-directory: infra/azure/aks
+        run: |
+          terraform init -input=false \
+            -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=aks-dev.tfstate" \
+            -backend-config="use_azuread_auth=true" >/dev/null
+          terraform output -json > "$RUNNER_TEMP/tf.json"
+          out() { jq -r ".$1.value" "$RUNNER_TEMP/tf.json"; }
+          if [ "$(out cluster_name)" = "null" ]; then
+            echo "::error::No AKS cluster in Terraform state. Run the Terraform Apply workflow first."; exit 1
+          fi
+          # Mask the App Insights connection string so it never appears in logs.
+          echo "::add-mask::$(out app_insights_connection_string)"
+          {
+            echo "cluster=$(out cluster_name)"
+            echo "rg=$(out resource_group_name)"
+            echo "location=$(out location)"
+            echo "acr=$(out acr_name)"
+            echo "registry=$(out acr_login_server)"
+          } >> "$GITHUB_OUTPUT"
+
+      # ---- 2. Build & push images ---------------------------------------------
+      - name: Azure login (OIDC)
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_APPLY_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Log in to ACR
+        run: az acr login --name "${{ steps.tf.outputs.acr }}"
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build & push shiplog-api
+        uses: docker/build-push-action@v7
+        with:
+          context: src/api
+          push: true
+          build-args: VERSION=0.1.0+${{ env.IMAGE_TAG }}
+          tags: ${{ steps.tf.outputs.registry }}/shiplog-api:${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+
+      - name: Build & push shiplog-web
+        uses: docker/build-push-action@v7
+        with:
+          context: src/web
+          push: true
+          tags: ${{ steps.tf.outputs.registry }}/shiplog-web:${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+
+      # ---- 3. Connect to the cluster ------------------------------------------
+      - uses: azure/setup-helm@v5
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - uses: azure/use-kubelogin@v1
+        with:
+          kubelogin-version: v0.2.20
+
+      - name: Get kubeconfig (Entra ID)
+        run: |
+          az aks get-credentials --resource-group "${{ steps.tf.outputs.rg }}" --name "${{ steps.tf.outputs.cluster }}" --overwrite-existing
+          # Local accounts are disabled, so kubectl must get an Entra token. Reuse the az CLI's OIDC sign-in.
+          kubelogin convert-kubeconfig -l azurecli
+          kubectl get nodes -o wide
+
+      # ---- 4. OpenTelemetry Collector -----------------------------------------
+      - name: Deploy OpenTelemetry Collector
+        run: |
+          out() { jq -r ".$1.value" "$RUNNER_TEMP/tf.json"; }
+          # The collector reads node log files (hostPath), which only the "privileged" Pod Security level permits.
+          kubectl create namespace observability --dry-run=client -o yaml | kubectl apply -f -
+          kubectl label namespace observability --overwrite pod-security.kubernetes.io/enforce=privileged
+
+          # Per-cluster values as a JSON file (JSON is valid YAML), so long URLs need no --set escaping.
+          jq -n \
+            --arg client "$(out otel_collector_client_id)" \
+            --arg cluster "$(out cluster_name)" \
+            --argjson ep "$(jq '.otlp_endpoints.value' "$RUNNER_TEMP/tf.json")" \
+            '{
+              serviceAccount: { annotations: { "azure.workload.identity/client-id": $client } },
+              config: { exporters: { "otlphttp/azuremonitor": {
+                traces_endpoint: $ep.traces, logs_endpoint: $ep.logs, metrics_endpoint: $ep.metrics } } },
+              extraEnvs: [ { name: "CLUSTER_NAME", value: $cluster }, { name: "CLOUD_PROVIDER", value: "azure" } ]
+            }' > "$RUNNER_TEMP/otel-values.json"
+
+          helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts --force-update
+          helm upgrade --install otel-collector open-telemetry/opentelemetry-collector \
+            --version "$OTEL_CHART_VERSION" --namespace observability \
+            -f deploy/otel-collector/values-azure.yaml -f "$RUNNER_TEMP/otel-values.json" \
+            --wait --timeout 5m
+
+      # ---- 5. Shiplog ---------------------------------------------------------
+      - name: Deploy Shiplog
+        env:
+          WEB_ALLOWED_CIDRS: ${{ vars.WEB_ALLOWED_CIDRS }}
+        run: |
+          out() { jq -r ".$1.value" "$RUNNER_TEMP/tf.json"; }
+          kubectl create namespace shiplog --dry-run=client -o yaml | kubectl apply -f -
+          kubectl label namespace shiplog --overwrite \
+            pod-security.kubernetes.io/enforce=restricted pod-security.kubernetes.io/warn=restricted
+
+          if [ -z "$WEB_ALLOWED_CIDRS" ]; then
+            echo "::warning::WEB_ALLOWED_CIDRS is not set, so the app is reachable from the whole internet."
+          fi
+
+          jq -n \
+            --arg registry "$(out acr_login_server)" \
+            --arg tag "$IMAGE_TAG" \
+            --arg cluster "$(out cluster_name)" \
+            --arg region "$(out location)" \
+            --arg ai "$(out app_insights_connection_string)" \
+            --arg cidrs "$WEB_ALLOWED_CIDRS" \
+            '{
+              image: { registry: $registry, tag: $tag },
+              environment: { cluster: $cluster, region: $region },
+              web: {
+                appInsightsConnectionString: $ai,
+                service: { loadBalancerSourceRanges: ($cidrs | split(",") | map(gsub(" "; "")) | map(select(length > 0))) }
+              }
+            }' > "$RUNNER_TEMP/shiplog-values.json"
+
+          helm upgrade --install shiplog charts/shiplog --namespace shiplog \
+            -f charts/shiplog/values-aks.yaml -f "$RUNNER_TEMP/shiplog-values.json" \
+            --wait --timeout 10m
+
+      - name: helm test
+        run: helm test shiplog --namespace shiplog --logs
+
+      - name: Summary
+        if: always()
+        run: |
+          label=$(kubectl get svc shiplog-web -n shiplog -o jsonpath='{.metadata.annotations.service\.beta\.kubernetes\.io/azure-dns-label-name}' 2>/dev/null)
+          ip=$(kubectl get svc shiplog-web -n shiplog -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
+          {
+            echo "### Deploy to AKS · dev"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| App | http://${label}.${{ steps.tf.outputs.location }}.cloudapp.azure.com |"
+            echo "| Public IP | \`${ip:-pending}\` |"
+            echo "| Image tag | \`${IMAGE_TAG}\` |"
+            echo
+            echo '```'
+            kubectl get pods -n shiplog -o wide 2>/dev/null
+            echo
+            kubectl get pods -n observability -o wide 2>/dev/null
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

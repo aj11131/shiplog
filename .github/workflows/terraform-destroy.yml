@@ -1,0 +1,79 @@
+# Tear down Azure resources to stop paying for them. Manual only, with a typed confirmation.
+#
+#   aks-dev        cluster, registry, load balancer, disks (about $3/day while running).
+#                  Observability history is kept. Re-create with the Terraform Apply workflow.
+#   observability  the Log Analytics workspace, App Insights and DCR (all telemetry history).
+#                  Destroy aks-dev first.
+#
+# Bootstrap (state storage + CI identities) is never destroyed by CI; see docs/03-aks-terraform.md.
+name: Terraform Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      stack:
+        description: Stack to destroy
+        type: choice
+        options: [aks-dev, observability]
+        default: aks-dev
+      confirm:
+        description: Type the stack name again to confirm
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: terraform-apply # shares the lock with apply: never run both at once
+  cancel-in-progress: false
+
+env:
+  TF_VERSION: 1.16.5
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  ARM_USE_OIDC: "true"
+  ARM_CLIENT_ID: ${{ vars.AZURE_APPLY_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  TF_VAR_tfstate_resource_group: ${{ vars.TFSTATE_RESOURCE_GROUP }}
+  TF_VAR_tfstate_storage_account: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
+
+jobs:
+  destroy:
+    name: destroy · ${{ inputs.stack }}
+    if: inputs.confirm == inputs.stack
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Select stack
+        id: s
+        run: |
+          case "${{ inputs.stack }}" in
+            aks-dev)       echo "dir=infra/azure/aks"           >> "$GITHUB_OUTPUT"; echo "key=aks-dev.tfstate"       >> "$GITHUB_OUTPUT"; echo "vars=-var-file=env/dev.tfvars" >> "$GITHUB_OUTPUT" ;;
+            observability) echo "dir=infra/azure/observability" >> "$GITHUB_OUTPUT"; echo "key=observability.tfstate" >> "$GITHUB_OUTPUT"; echo "vars="                         >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: terraform init
+        working-directory: ${{ steps.s.outputs.dir }}
+        run: >
+          terraform init
+          -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}"
+          -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}"
+          -backend-config="container_name=tfstate"
+          -backend-config="key=${{ steps.s.outputs.key }}"
+          -backend-config="use_azuread_auth=true"
+
+      - name: terraform destroy
+        working-directory: ${{ steps.s.outputs.dir }}
+        run: |
+          terraform plan -destroy -lock-timeout=5m -no-color ${{ steps.s.outputs.vars }} -out=destroy.tfplan
+          terraform apply -lock-timeout=5m -no-color destroy.tfplan
+          echo "### Destroyed \`${{ inputs.stack }}\` ✅" >> "$GITHUB_STEP_SUMMARY"
