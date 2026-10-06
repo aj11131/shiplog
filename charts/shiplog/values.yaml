@@ -50,9 +50,13 @@ web:
     repository: shiplog-web
   replicaCount: 2
   service:
-    type: ClusterIP
+    type: ClusterIP # LoadBalancer on AKS/EKS; NodePort on kind
     port: 80
     nodePort: null # only used when type is NodePort
+    annotations: {} # cloud load balancer settings, e.g. an Azure DNS label
+    # Only these client CIDRs may reach a LoadBalancer Service (enforced by the cloud
+    # load balancer / node firewall). Empty = open to the internet.
+    loadBalancerSourceRanges: []
   appInsightsConnectionString: ""
   resources:
     requests:

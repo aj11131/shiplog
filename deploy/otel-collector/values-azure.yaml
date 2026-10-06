@@ -1,0 +1,133 @@
+# OpenTelemetry Collector (upstream chart open-telemetry/opentelemetry-collector) for clusters
+# that send telemetry to the shared Azure Monitor backend (infra/azure/observability).
+#
+# One collector pod per node (DaemonSet), each doing three jobs:
+#   1. receive OTLP from the API pods on its node (traces, metrics, logs)
+#   2. tail container stdout logs from the node's disk (nginx, postgres)
+#   3. scrape CPU/memory stats from its node's kubelet
+# It enriches everything with Kubernetes metadata (pod, namespace, deployment...) and sends
+# it to Azure Monitor, signing in through Workload Identity (no keys or connection strings).
+#
+# Per-deployment values (client ID, endpoints, cluster name) are passed by the deploy workflow:
+#   --set serviceAccount.annotations."azure\.workload\.identity/client-id"=...
+#   --set-string config.exporters.otlphttp/azuremonitor.traces_endpoint=... (etc.)
+
+mode: daemonset
+fullnameOverride: otel-collector # Service: otel-collector.observability:4317; also the ServiceAccount name
+
+image:
+  repository: otel/opentelemetry-collector-contrib # "contrib" includes azure_auth, k8sattributes, filelog...
+
+serviceAccount:
+  create: true
+  annotations: {}
+  # azure.workload.identity/client-id: set by the deploy workflow
+
+podLabels:
+  azure.workload.identity/use: "true" # the AKS webhook injects the federated token + AZURE_* env vars
+
+# The collector reads root-owned container log files from the node (hostPath), which no
+# Pod Security level below "privileged" allows. That's typical for node agents, and it's
+# why the collector lives in its own namespace instead of the app's "restricted" one.
+# It runs as root to read those files, but with every Linux capability dropped and a read-only root filesystem.
+securityContext:
+  runAsUser: 0
+  runAsNonRoot: false
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 96Mi
+  limits:
+    memory: 256Mi
+
+service:
+  enabled: true # a ClusterIP Service in front of the DaemonSet...
+  # ...that keeps traffic on the same node (the chart's default for daemonsets): each API
+  # pod talks to the collector next to it, so there's no cross-node hop.
+  internalTrafficPolicy: Local
+
+ports:
+  jaeger-compact: { enabled: false }
+  jaeger-thrift: { enabled: false }
+  jaeger-grpc: { enabled: false }
+  zipkin: { enabled: false }
+
+presets:
+  kubernetesAttributes:
+    enabled: true # adds k8s.pod.name, k8s.deployment.name, k8s.namespace.name... to every signal
+  kubeletMetrics:
+    enabled: true # node / pod / container CPU, memory, filesystem
+  logsCollection:
+    enabled: true # container stdout/stderr from /var/log/pods
+
+config:
+  extensions:
+    azure_auth:
+      workload_identity:
+        client_id: ${env:AZURE_CLIENT_ID}
+        tenant_id: ${env:AZURE_TENANT_ID}
+        federated_token_file: ${env:AZURE_FEDERATED_TOKEN_FILE}
+      scopes:
+        - https://monitor.azure.com/.default
+
+  receivers:
+    # Remove chart defaults we don't use.
+    jaeger: null
+    zipkin: null
+    prometheus: null
+    filelog:
+      # Cost control: only Shiplog's namespace. The API container is excluded because the
+      # API already sends structured logs over OTLP, so tailing it too would ingest everything twice.
+      include:
+        - /var/log/pods/shiplog_*/*/*.log
+      exclude:
+        - /var/log/pods/shiplog_*/api/*.log
+        - /var/log/pods/shiplog_*/migrate/*.log
+    kubeletstats:
+      collection_interval: 60s # the preset's 20s triples the metric volume
+      insecure_skip_verify: true # AKS kubelet serving certs don't include the node IP
+
+  processors:
+    # Azure Monitor expects delta temporality; SDKs and kubeletstats emit cumulative values.
+    cumulativetodelta: {}
+    resource/cluster:
+      attributes:
+        - { key: k8s.cluster.name, action: upsert, value: "${env:CLUSTER_NAME}" }
+        - { key: cloud.provider, action: upsert, value: "${env:CLOUD_PROVIDER}" }
+
+  exporters:
+    debug: null
+    otlphttp/azuremonitor:
+      # traces_endpoint / logs_endpoint / metrics_endpoint: set by the deploy workflow
+      auth:
+        authenticator: azure_auth
+      compression: gzip
+      retry_on_failure:
+        enabled: true
+
+  service:
+    extensions: [health_check, azure_auth]
+    pipelines:
+      traces:
+        receivers: [otlp]
+        processors: [memory_limiter, resource/cluster, batch]
+        exporters: [otlphttp/azuremonitor]
+      metrics:
+        receivers: [otlp]
+        processors: [memory_limiter, resource/cluster, cumulativetodelta, batch]
+        exporters: [otlphttp/azuremonitor]
+      logs:
+        receivers: [otlp]
+        processors: [memory_limiter, resource/cluster, batch]
+        exporters: [otlphttp/azuremonitor]
+
+extraEnvs:
+  - name: CLUSTER_NAME
+    value: unknown # set by the deploy workflow
+  - name: CLOUD_PROVIDER
+    value: azure

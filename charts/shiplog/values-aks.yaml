@@ -1,0 +1,37 @@
+# Azure Kubernetes Service (infra/azure/aks). Deployed by .github/workflows/deploy-aks.yml,
+# which also sets: image.registry, image.tag, environment.cluster, environment.region,
+# web.appInsightsConnectionString and web.service.loadBalancerSourceRanges.
+environment:
+  name: aks-dev
+  cloud: aks
+
+image:
+  pullPolicy: IfNotPresent # every build has a unique tag (the git SHA), so a cached image is always the right one
+
+api:
+  autoscaling:
+    enabled: true # AKS ships metrics-server, so no install step is needed (unlike kind)
+    minReplicas: 2
+    maxReplicas: 4
+
+web:
+  service:
+    # An Azure Standard Load Balancer with a public IP, created by AKS's cloud controller.
+    type: LoadBalancer
+    annotations:
+      # Gives the public IP a DNS name: <label>.<region>.cloudapp.azure.com
+      service.beta.kubernetes.io/azure-dns-label-name: shiplog-dev-aj11131
+      # Health-probe the nginx /healthz endpoint instead of a plain TCP check.
+      service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: /healthz
+
+postgres:
+  persistence:
+    size: 4Gi # Azure Disk (managed-csi, Premium SSD v1); 4 GiB is the smallest billing tier
+
+telemetry:
+  # The OpenTelemetry Collector DaemonSet (deploy/otel-collector). internalTrafficPolicy: Local
+  # keeps each API pod's telemetry on its own node.
+  otlpEndpoint: http://otel-collector.observability.svc.cluster.local:4317
+
+devDashboard:
+  enabled: false

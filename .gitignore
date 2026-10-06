@@ -494,7 +494,15 @@ coverage/
 *.tfstate
 *.tfstate.*
 *.tfplan
+tfplan
+destroy.tfplan
+plan.txt
+plan.json
 crash.log
 # Never commit real tfvars; commit *.tfvars.example instead
 *.auto.tfvars
 secrets.tfvars
+
+# Terraform local inputs
+terraform.tfvars
+backend.local.hcl
