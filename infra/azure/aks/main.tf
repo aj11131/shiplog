@@ -143,15 +143,20 @@ module "aks" {
     min_count           = try(var.node_autoscaling.min, null)
     max_count           = try(var.node_autoscaling.max, null)
 
-    # How node upgrades roll: either add temporary extra nodes (surge) or take existing
-    # nodes out one at a time (unavailable). Surge needs spare vCPU quota.
-    upgrade_settings = var.node_upgrade_surge ? { max_surge = "1" } : { max_surge = "0", max_unavailable = "1" }
+    # Upgrades add one temporary node, move pods onto it, then replace the old nodes one
+    # by one. System pools must surge: AKS rejects max_unavailable > 0 for them. The
+    # surge node needs spare vCPU quota (see var.auto_upgrades).
+    upgrade_settings = { max_surge = "1" }
   }
 
-  # Patch-version Kubernetes upgrades and weekly node image updates, applied automatically.
-  auto_upgrade_profile = {
+  # On: patch-version Kubernetes upgrades and weekly node-image updates, applied automatically.
+  # Off: nothing is upgraded until you trigger it (az aks upgrade / az aks nodepool upgrade --node-image-only).
+  auto_upgrade_profile = var.auto_upgrades ? {
     upgrade_channel         = "patch"
     node_os_upgrade_channel = "NodeImage"
+    } : {
+    upgrade_channel         = "none"
+    node_os_upgrade_channel = "None"
   }
 }
 

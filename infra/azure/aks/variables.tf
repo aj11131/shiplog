@@ -37,14 +37,14 @@ variable "node_autoscaling" {
   default = null
 }
 
-variable "node_upgrade_surge" {
+variable "auto_upgrades" {
   description = <<-EOT
-    true:  upgrades add a temporary extra node (max_surge = 1), so capacity never drops.
-    false: upgrades drain one existing node at a time (max_unavailable = 1). Needs no
-           spare vCPU quota, but runs on fewer nodes during the upgrade.
+    Let AKS apply Kubernetes patch versions and node-image (OS) updates automatically.
+    Every upgrade adds one surge node, so this needs vCPU quota for node_count + 1 nodes.
+    Turn it off when the quota is exactly full; upgrades then become a manual task.
   EOT
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "cluster_admin_object_ids" {
