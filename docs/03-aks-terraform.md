@@ -104,8 +104,10 @@ GitHub signs a short-lived token for each job, describing **where** the job runs
 
 | Job | Token subject | Trusted by |
 |---|---|---|
-| any PR workflow | `repo:aj11131/shiplog:pull_request` | plan identity (Reader + state lock) |
-| job with `environment: dev` | `repo:aj11131/shiplog:environment:dev` | apply identity (Contributor + constrained RBAC admin) |
+| any PR workflow | `repo:aj11131@54563379/shiplog@1407845180:pull_request` | plan identity (Reader + state lock) |
+| job with `environment: dev` | `repo:aj11131@54563379/shiplog@1407845180:environment:dev` | apply identity (Contributor + constrained RBAC admin) |
+
+The `@54563379` and `@1407845180` are the owner and repo IDs. GitHub's **immutable subjects** add them so that if the repo is renamed, or deleted and someone re-creates one with the same name, the new repo's tokens don't match. Check the exact prefix with `gh api repos/aj11131/shiplog/actions/oidc/customization/sub`. If a sign-in fails with `AADSTS700213: No matching federated identity record`, the error message shows the subject GitHub actually sent; compare it with this table.
 
 Azure exchanges that token for an Azure access token only if the subject matches a federated credential exactly. There's no client secret to leak, rotate or expire. That's also why the GitHub "variables" aren't secrets: client IDs only *identify* an identity, they don't grant anything.
 

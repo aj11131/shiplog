@@ -15,7 +15,8 @@ variable "location" {
 
 variable "github_subjects" {
   description = <<-EOT
-    OIDC subjects allowed to use this identity. Examples:
+    OIDC subjects allowed to use this identity. Examples (with immutable subjects, OWNER and
+    REPO become OWNER@OWNER_ID and REPO@REPO_ID):
       repo:OWNER/REPO:pull_request        any pull request workflow
       repo:OWNER/REPO:environment:dev     jobs that target the "dev" GitHub environment
       repo:OWNER/REPO:ref:refs/heads/main pushes to main

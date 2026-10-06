@@ -26,8 +26,8 @@ resource "azurerm_user_assigned_identity" "this" {
 resource "azurerm_federated_identity_credential" "github" {
   for_each = toset(var.github_subjects)
 
-  # Names may not contain ':' or '/', so derive one from the subject.
-  name                      = substr(replace(replace(each.value, ":", "-"), "/", "-"), 0, 120)
+  # Names allow only letters, digits, '-' and '_', so derive one from the subject.
+  name                      = substr(replace(each.value, "/[^A-Za-z0-9_-]/", "-"), 0, 120)
   user_assigned_identity_id = azurerm_user_assigned_identity.this.id
   issuer                    = "https://token.actions.githubusercontent.com"
   audience                  = ["api://AzureADTokenExchange"]

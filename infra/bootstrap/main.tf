@@ -125,7 +125,7 @@ module "github_plan" {
   tags                = local.tags
 
   # Any pull request in the repo may run a plan, so this identity is read-only.
-  github_subjects = ["repo:${var.github_repository}:pull_request"]
+  github_subjects = ["${var.github_subject_prefix}:pull_request"]
 
   role_assignments = {
     reader = {
@@ -152,7 +152,7 @@ module "github_apply" {
 
   # Only jobs that declare `environment: dev`. GitHub makes them wait for a reviewer's
   # approval before they receive a token.
-  github_subjects = ["repo:${var.github_repository}:environment:${var.github_environment}"]
+  github_subjects = ["${var.github_subject_prefix}:environment:${var.github_environment}"]
 
   role_assignments = {
     contributor = {
