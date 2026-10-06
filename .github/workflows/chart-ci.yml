@@ -62,6 +62,7 @@ jobs:
 
           echo "--- defaults";           render | validate
           echo "--- kind";               render -f charts/shiplog/values-kind.yaml | validate
+          echo "--- aks";                render -f charts/shiplog/values-aks.yaml --set image.registry=example.azurecr.io --set image.tag=abc123 | validate
           echo "--- external database";  render --set postgres.enabled=false \
                                                   --set database.external.host=db.example.com \
                                                   --set-string database.external.existingSecret=yes | validate  # "yes" must stay a string

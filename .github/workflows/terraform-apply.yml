@@ -1,0 +1,96 @@
+# Terraform on merge to main: re-plan and apply each stack in dependency order.
+#
+# Runs as the APPLY identity (id-shiplog-github-apply). Azure only trusts it for jobs in
+# the "dev" GitHub environment, and that environment requires a reviewer's approval,
+# so nothing changes in Azure until a human clicks "Approve and deploy".
+name: Terraform Apply
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".github/workflows/terraform-*.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+# One apply at a time, queued rather than cancelled.
+concurrency:
+  group: terraform-apply
+  cancel-in-progress: false
+
+env:
+  TF_VERSION: 1.16.5
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  ARM_USE_OIDC: "true"
+  ARM_CLIENT_ID: ${{ vars.AZURE_APPLY_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  TF_VAR_tfstate_resource_group: ${{ vars.TFSTATE_RESOURCE_GROUP }}
+  TF_VAR_tfstate_storage_account: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
+
+jobs:
+  apply:
+    name: apply · dev
+    runs-on: ubuntu-latest
+    environment: dev # ← approval gate + the OIDC subject the apply identity trusts
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      # Observability first: the AKS stack reads its outputs (DCR, endpoints).
+      - name: observability · init
+        working-directory: infra/azure/observability
+        run: >
+          terraform init
+          -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}"
+          -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}"
+          -backend-config="container_name=tfstate"
+          -backend-config="key=observability.tfstate"
+          -backend-config="use_azuread_auth=true"
+
+      # Apply exactly the plan that was just printed (no re-planning between show and apply).
+      - name: observability · plan & apply
+        working-directory: infra/azure/observability
+        run: |
+          terraform plan -lock-timeout=5m -no-color -out=tfplan
+          terraform apply -lock-timeout=5m -no-color tfplan
+
+      - name: aks-dev · init
+        working-directory: infra/azure/aks
+        run: >
+          terraform init
+          -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}"
+          -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}"
+          -backend-config="container_name=tfstate"
+          -backend-config="key=aks-dev.tfstate"
+          -backend-config="use_azuread_auth=true"
+
+      - name: aks-dev · plan & apply
+        working-directory: infra/azure/aks
+        run: |
+          terraform plan -lock-timeout=5m -no-color -var-file=env/dev.tfvars -out=tfplan
+          terraform apply -lock-timeout=5m -no-color tfplan
+
+      - name: Summary
+        working-directory: infra/azure/aks
+        run: |
+          {
+            echo "### Terraform apply · dev ✅"
+            echo
+            echo "| Output | Value |"
+            echo "|---|---|"
+            for o in cluster_name resource_group_name acr_login_server location; do
+              echo "| \`$o\` | \`$(terraform output -raw $o)\` |"
+            done
+            echo
+            echo "Next: the **Deploy to AKS** workflow builds the images and installs the Helm charts."
+          } >> "$GITHUB_STEP_SUMMARY"

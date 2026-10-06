@@ -16,7 +16,7 @@ Users post short entries to a shared ship's log. Every entry is stamped with the
 |---|---|---|
 | 1 | App code, unit tests, Docker Compose, local telemetry | ✅ [notes](docs/01-local-app.md) |
 | 2 | Helm chart on a local kind cluster | ✅ [notes](docs/02-helm-kind.md) |
-| 3 | Terraform + CI/CD for AKS, Azure observability stack | ⏳ |
+| 3 | Terraform + CI/CD for AKS, Azure observability stack | 🚧 [notes & setup](docs/03-aks-terraform.md) |
 | 4 | Entra ID sign-in | ⏳ |
 | 5 | Add EKS | ⏳ |
 | 6 | Experiments | ⏳ |
@@ -72,7 +72,9 @@ cd src/web && npm run test:ci         # Vitest: services, interceptor, component
 cd src/web && npm run lint            # angular-eslint
 ```
 
-CI runs all of this on every pull request ([app-ci.yml](.github/workflows/app-ci.yml)). Chart changes are linted, schema-validated and deployed to a throwaway kind cluster ([chart-ci.yml](.github/workflows/chart-ci.yml)).
+CI runs all of this on every pull request. Terraform changes get a plan comment on the PR, and merges are applied and deployed after approval ([docs/03](docs/03-aks-terraform.md)).
+
+App code is built and tested by [app-ci.yml](.github/workflows/app-ci.yml). Chart changes are linted, schema-validated and deployed to a throwaway kind cluster ([chart-ci.yml](.github/workflows/chart-ci.yml)).
 
 ## Repository layout
 
@@ -84,6 +86,9 @@ docs/               Per-step learning notes
 .github/workflows/  CI/CD
 charts/shiplog/     Helm chart (+ postgres subchart)
 deploy/kind/        kind cluster config
+deploy/otel-collector/  OpenTelemetry Collector values (Azure Monitor)
 scripts/            kind-up.ps1 / kind-down.ps1
-infra/              (step 3+) Terraform
+infra/bootstrap/    one-time: state storage + GitHub OIDC identities
+infra/azure/        observability + aks stacks
+infra/modules/      reusable Terraform modules
 ```

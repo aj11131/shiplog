@@ -498,3 +498,7 @@ crash.log
 # Never commit real tfvars; commit *.tfvars.example instead
 *.auto.tfvars
 secrets.tfvars
+
+# Terraform local inputs
+terraform.tfvars
+backend.local.hcl

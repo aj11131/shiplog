@@ -1,0 +1,204 @@
+# Terraform on pull requests: static checks, then a `terraform plan` for every stack,
+# posted as a PR comment so reviewers can see exactly what a merge would change in Azure.
+#
+# Runs as the READ-ONLY identity (id-shiplog-github-plan): any PR can plan, nothing can apply.
+name: Terraform Plan
+
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+      - ".github/workflows/terraform-*.yml"
+
+permissions:
+  contents: read
+  id-token: write # request an OIDC token for Azure sign-in
+  pull-requests: write # create/update the plan comment
+
+# Never cancel a running plan: it holds the state lock, and cancelling can leave the lock behind.
+concurrency:
+  group: terraform-plan-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TF_VERSION: 1.16.5
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  # Terraform's azurerm/azapi providers and the azurerm backend all read these and use GitHub OIDC.
+  ARM_USE_OIDC: "true"
+  ARM_CLIENT_ID: ${{ vars.AZURE_PLAN_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  TF_VAR_tfstate_resource_group: ${{ vars.TFSTATE_RESOURCE_GROUP }}
+  TF_VAR_tfstate_storage_account: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Fast checks that need no cloud access.
+  # ---------------------------------------------------------------------------
+  static:
+    name: fmt · validate · tflint · checkov
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive -diff infra
+
+      - name: terraform validate
+        run: |
+          for dir in infra/bootstrap infra/azure/observability infra/azure/aks; do
+            echo "::group::$dir"
+            terraform -chdir=$dir init -backend=false
+            terraform -chdir=$dir validate
+            echo "::endgroup::"
+          done
+
+      - uses: terraform-linters/setup-tflint@v6
+
+      - name: tflint
+        run: |
+          tflint --init --config "$GITHUB_WORKSPACE/infra/.tflint.hcl"
+          for dir in infra/bootstrap infra/azure/observability infra/azure/aks infra/modules/github-oidc-identity; do
+            echo "::group::$dir"
+            tflint --chdir=$dir --config "$GITHUB_WORKSPACE/infra/.tflint.hcl"
+            echo "::endgroup::"
+          done
+        env:
+          GITHUB_TOKEN: ${{ github.token }} # avoids GitHub API rate limits when downloading plugins
+
+      # Security/best-practice scan. Soft-fail: findings are shown in the log for discussion
+      # rather than blocking the PR (a dev cluster deliberately skips some production controls).
+      - name: checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: infra
+          framework: terraform
+          soft_fail: true
+          quiet: true
+          download_external_modules: false
+
+  # ---------------------------------------------------------------------------
+  # One plan per stack.
+  # ---------------------------------------------------------------------------
+  plan:
+    name: plan · ${{ matrix.stack }}
+    needs: static
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - stack: observability
+            dir: infra/azure/observability
+            key: observability.tfstate
+            var_file: ""
+          - stack: aks-dev
+            dir: infra/azure/aks
+            key: aks-dev.tfstate
+            var_file: env/dev.tfvars
+    defaults:
+      run:
+        working-directory: ${{ matrix.dir }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check repository variables
+        working-directory: .
+        run: |
+          missing=0
+          for v in AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_PLAN_CLIENT_ID TFSTATE_RESOURCE_GROUP TFSTATE_STORAGE_ACCOUNT; do
+            [ -n "${!v}" ] || { echo "::error::Repository variable $v is not set (see docs/03-aks-terraform.md)"; missing=1; }
+          done
+          exit $missing
+        env:
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          AZURE_PLAN_CLIENT_ID: ${{ vars.AZURE_PLAN_CLIENT_ID }}
+          TFSTATE_RESOURCE_GROUP: ${{ vars.TFSTATE_RESOURCE_GROUP }}
+          TFSTATE_STORAGE_ACCOUNT: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform init
+        run: >
+          terraform init
+          -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}"
+          -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}"
+          -backend-config="container_name=tfstate"
+          -backend-config="key=${{ matrix.key }}"
+          -backend-config="use_azuread_auth=true"
+
+      - name: terraform plan
+        id: plan
+        run: |
+          set +e
+          terraform plan -lock-timeout=5m -no-color -detailed-exitcode -out=tfplan \
+            ${{ matrix.var_file && format('-var-file={0}', matrix.var_file) || '' }} 2>&1 | tee plan.log
+          code=${PIPESTATUS[0]}
+          # -detailed-exitcode: 0 = no changes, 1 = error, 2 = changes present
+          echo "exitcode=$code" >> "$GITHUB_OUTPUT"
+          [ "$code" = 1 ] && exit 1 || exit 0
+
+      - name: Render plan
+        if: steps.plan.outputs.exitcode == '0' || steps.plan.outputs.exitcode == '2'
+        run: terraform show -no-color tfplan > plan.txt
+
+      - name: Comment on PR
+        if: always() && steps.plan.outputs.exitcode != ''
+        uses: actions/github-script@v9
+        env:
+          STACK: ${{ matrix.stack }}
+          DIR: ${{ matrix.dir }}
+          EXITCODE: ${{ steps.plan.outputs.exitcode }}
+        with:
+          script: |
+            const fs = require('fs');
+            const { STACK, DIR, EXITCODE } = process.env;
+            const read = (f) => (fs.existsSync(`${DIR}/${f}`) ? fs.readFileSync(`${DIR}/${f}`, 'utf8') : '');
+            const log = read('plan.log');
+            const plan = read('plan.txt') || log;
+
+            const summary =
+              EXITCODE === '1' ? '❌ **Plan failed**' :
+              EXITCODE === '0' ? '✅ No changes' :
+              '📝 ' + ((log.match(/Plan: .*/) || ['Changes present'])[0]);
+
+            const max = 60000; // GitHub comments are limited to 65,536 characters
+            const body = [
+              `<!-- terraform-plan:${STACK} -->`,
+              `### Terraform plan · \`${STACK}\``,
+              summary,
+              '',
+              '<details><summary>Show plan</summary>',
+              '',
+              '```hcl',
+              plan.length > max ? plan.slice(0, max) + '\n… (truncated: see the workflow log)' : plan,
+              '```',
+              '</details>',
+              '',
+              `_Commit ${context.sha.slice(0, 7)} · [workflow run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})_`,
+            ].join('\n');
+
+            // Update this stack's existing comment instead of adding a new one on every push.
+            const { data: comments } = await github.rest.issues.listComments({
+              ...context.repo, issue_number: context.issue.number, per_page: 100,
+            });
+            const existing = comments.find((c) => c.body.includes(`<!-- terraform-plan:${STACK} -->`));
+            if (existing) {
+              await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body });
+            }
+
+      - name: Fail if plan failed
+        if: steps.plan.outputs.exitcode == '1'
+        run: exit 1
