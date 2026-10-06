@@ -26,7 +26,7 @@
 
 They're separate stacks because they have **different lifecycles**. You'll destroy and recreate the cluster often to save money, but you want to keep its telemetry history, and the bootstrap pieces almost never change.
 
-## Cost (centralus, approximate)
+## Cost (approximate; the cluster is in westus3, observability and state in centralus)
 
 | Resource | ~Monthly | Notes |
 |---|---|---|
@@ -40,6 +40,8 @@ They're separate stacks because they have **different lifecycles**. You'll destr
 | **Total while the cluster runs** | **≈ $160/month ≈ $5/day** | |
 
 **About the quota:** new pay-as-you-go subscriptions get **4 vCPUs per region** (total and per VM family), and some sizes aren't offered at all. The first apply failed because `Standard_B2als_v2` isn't available to this subscription in centralus. Two nodes with 2 vCPU each use the whole quota, so the pool has no autoscaling. **Automatic upgrades are off too** (`auto_upgrades = false`). AKS upgrades a system pool by adding a temporary *surge* node, and it rejects the drain-in-place alternative (`maxUnavailable`) for system pools; a third node doesn't fit in 4 vCPU. Until the quota is raised, patching is manual: raise the quota first, then run `az aks nodepool upgrade --node-image-only`. Check what you can use with `az vm list-usage -l centralus -o table` and `az vm list-skus -l centralus --size Standard_D2 -o table`. To raise the limit: Portal → *Quotas* → *Compute* → centralus.
+
+**About regional capacity:** creating the cluster in centralus failed with `AKSCapacityHeavyUsage`. When a region is short on AKS capacity, Microsoft blocks new clusters for non-Enterprise subscriptions first, and its advice for dev/test is to [use another region](https://learn.microsoft.com/troubleshoot/azure/azure-kubernetes/error-codes/akscapacityheavyusage-error). That's why the cluster lives in **westus3** while the other stacks stay in centralus. Changing `location` forces Terraform to **replace** (destroy and recreate) the stack's resource group and everything in it, because Azure resources can't move regions in place.
 
 **Destroy the cluster when you're not using it:** Actions → *Terraform Destroy* → `aks-dev`. Observability and bootstrap cost almost nothing to keep.
 
