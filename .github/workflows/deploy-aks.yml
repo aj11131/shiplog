@@ -39,10 +39,37 @@ env:
   IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
+  # Decide whether this run should deploy. It has no `environment`, so it never asks for approval.
+  gate:
+    name: should deploy?
+    runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.check.outputs.deploy }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: check
+        env:
+          EVENT: ${{ github.event_name }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          deploy=true
+          if [ "$EVENT" = "workflow_run" ] && [ "$RUN_CONCLUSION" != "success" ]; then
+            echo "Terraform Apply did not succeed; not deploying."; deploy=false
+          elif [ "$EVENT" = "push" ] && git diff --name-only "$BEFORE" "$GITHUB_SHA" 2>/dev/null | grep -qE '^(infra/|\.github/workflows/terraform-)'; then
+            # The same push also changed infrastructure. Terraform Apply runs for it, and this
+            # workflow runs again once that apply succeeds. Deploying now would race the apply.
+            echo "Push also changed infra/: the deploy will run after Terraform Apply instead."; deploy=false
+          fi
+          echo "deploy=$deploy" >> "$GITHUB_OUTPUT"
+          echo "### Deploy: $deploy" >> "$GITHUB_STEP_SUMMARY"
+
   deploy:
     name: deploy · aks-dev
-    # After a Terraform Apply, only deploy if the apply succeeded.
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    needs: gate
+    if: needs.gate.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     environment: dev
     steps:
