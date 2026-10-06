@@ -131,18 +131,21 @@ module "aks" {
   }
 
   # --- Nodes ---------------------------------------------------------------
-  # One autoscaling pool that runs both system pods and the app (cheapest). Production
-  # clusters usually separate them into system and user pools.
+  # One pool that runs both system pods and the app (cheapest). Production clusters
+  # usually separate them into system and user pools.
   default_agent_pool = {
     name                = "system"
     mode                = "System"
     vm_size             = var.node_vm_size
     os_sku              = "AzureLinux"
-    enable_auto_scaling = true
-    min_count           = var.node_min_count
-    max_count           = var.node_max_count
-    count_of            = var.node_min_count
-    upgrade_settings    = { max_surge = "1" }
+    count_of            = var.node_count
+    enable_auto_scaling = var.node_autoscaling != null
+    min_count           = try(var.node_autoscaling.min, null)
+    max_count           = try(var.node_autoscaling.max, null)
+
+    # How node upgrades roll: either add temporary extra nodes (surge) or take existing
+    # nodes out one at a time (unavailable). Surge needs spare vCPU quota.
+    upgrade_settings = var.node_upgrade_surge ? { max_surge = "1" } : { max_surge = "0", max_unavailable = "1" }
   }
 
   # Patch-version Kubernetes upgrades and weekly node image updates, applied automatically.

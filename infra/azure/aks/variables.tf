@@ -19,19 +19,32 @@ variable "kubernetes_version" {
 variable "node_vm_size" {
   description = "VM size for the node pool."
   type        = string
-  default     = "Standard_B2als_v2" # 2 vCPU / 4 GiB burstable; cheap, fine for a test cluster
+  default     = "Standard_D2als_v7" # 2 vCPU / 4 GiB AMD. Check what your subscription allows: az vm list-skus -l <region> --size Standard_D2
 }
 
-variable "node_min_count" {
-  description = "Minimum nodes (cluster autoscaler)."
+variable "node_count" {
+  description = "Number of nodes (the starting count when autoscaling is on)."
   type        = number
   default     = 2
 }
 
-variable "node_max_count" {
-  description = "Maximum nodes (cluster autoscaler)."
-  type        = number
-  default     = 3
+variable "node_autoscaling" {
+  description = "Cluster autoscaler bounds, e.g. { min = 2, max = 4 }. null = fixed node_count. Every node needs vCPU quota."
+  type = object({
+    min = number
+    max = number
+  })
+  default = null
+}
+
+variable "node_upgrade_surge" {
+  description = <<-EOT
+    true:  upgrades add a temporary extra node (max_surge = 1), so capacity never drops.
+    false: upgrades drain one existing node at a time (max_unavailable = 1). Needs no
+           spare vCPU quota, but runs on fewer nodes during the upgrade.
+  EOT
+  type        = bool
+  default     = false
 }
 
 variable "cluster_admin_object_ids" {

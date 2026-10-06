@@ -30,14 +30,16 @@ They're separate stacks because they have **different lifecycles**. You'll destr
 
 | Resource | ~Monthly | Notes |
 |---|---|---|
-| 2 × Standard_B2als_v2 nodes | $55 | autoscaler can add a 3rd |
+| 2 × Standard_D2als_v7 nodes | $118 | fixed at 2: the subscription's 4-vCPU quota (see below) |
 | OS disks, Postgres disk | $12 | |
 | Load balancer + 2 public IPs | $25 | outbound + web |
 | ACR Basic | $5 | |
 | AKS control plane | $0 | Free tier, no SLA |
 | Log Analytics / App Insights | ~$0 | first 5 GB/month free; 1 GB/day hard cap |
 | State storage | <$1 | |
-| **Total while the cluster runs** | **≈ $95/month ≈ $3/day** | |
+| **Total while the cluster runs** | **≈ $160/month ≈ $5/day** | |
+
+**About the quota:** new pay-as-you-go subscriptions get **4 vCPUs per region** (total and per VM family), and some sizes aren't offered at all. The first apply failed because `Standard_B2als_v2` isn't available to this subscription in centralus. Two nodes with 2 vCPU each use the whole quota, so the pool has no autoscaling and upgrades drain one node at a time (`node_upgrade_surge = false`) instead of adding a surge node. Check what you can use with `az vm list-usage -l centralus -o table` and `az vm list-skus -l centralus --size Standard_D2 -o table`. To raise the limit: Portal → *Quotas* → *Compute* → centralus.
 
 **Destroy the cluster when you're not using it:** Actions → *Terraform Destroy* → `aks-dev`. Observability and bootstrap cost almost nothing to keep.
 
