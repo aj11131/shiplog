@@ -1,0 +1,26 @@
+# Local kind cluster (see deploy/kind/kind-config.yaml and scripts/kind-up.ps1).
+environment:
+  name: kind
+  cloud: kind
+  region: local
+  cluster: shiplog
+
+image:
+  tag: local # images built locally and loaded with `kind load docker-image`
+  pullPolicy: Never # fail fast if the image wasn't loaded instead of trying Docker Hub
+
+api:
+  autoscaling:
+    enabled: true # metrics-server is installed by kind-up.ps1
+    minReplicas: 3 # with the HPA on, it owns the replica count (replicaCount is ignored)
+
+web:
+  service:
+    type: NodePort
+    nodePort: 30080 # mapped to http://localhost:8090 by the kind config
+
+devDashboard:
+  enabled: true
+  service:
+    type: NodePort
+    nodePort: 30888 # mapped to http://localhost:18890

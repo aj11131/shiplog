@@ -1,0 +1,23 @@
+Shiplog {{ .Chart.AppVersion }} deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+Environment: {{ .Values.environment.name }} (cloud={{ .Values.environment.cloud }}, cluster={{ .Values.environment.cluster }})
+
+Watch the pods start:
+  kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }} -o wide -w
+
+{{- if eq .Values.web.service.type "NodePort" }}
+
+Web is exposed on NodePort {{ .Values.web.service.nodePort | default "(auto-assigned)" }}.
+On the Shiplog kind cluster that is http://localhost:8090
+{{- else }}
+
+Open the app:
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "shiplog.componentName" (dict "root" $ "component" "web") }} 8090:{{ .Values.web.service.port }}
+  then browse to http://localhost:8090
+{{- end }}
+{{- if .Values.devDashboard.enabled }}
+
+Telemetry dashboard: {{ if eq .Values.devDashboard.service.type "NodePort" }}http://localhost:18890 (kind){{ else }}kubectl port-forward svc/{{ include "shiplog.componentName" (dict "root" $ "component" "dashboard") }} 18890:18888{{ end }}
+{{- end }}
+
+Run the smoke test:
+  helm test {{ .Release.Name }} -n {{ .Release.Namespace }} --logs

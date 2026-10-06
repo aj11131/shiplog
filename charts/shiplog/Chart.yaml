@@ -1,0 +1,15 @@
+apiVersion: v2
+name: shiplog
+description: Shiplog — a small three-tier app for comparing Kubernetes on AKS, EKS and kind.
+type: application
+# Chart version: bump when the chart changes.
+version: 0.1.0
+# App version: the default image tag when image.tag is not set.
+appVersion: "0.1.0"
+
+dependencies:
+  # Local subchart in ./charts/postgres. Turn it off (postgres.enabled=false) to point
+  # the API at a managed database instead (see database.external in values.yaml).
+  - name: postgres
+    version: 0.1.0
+    condition: postgres.enabled

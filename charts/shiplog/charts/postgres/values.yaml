@@ -1,0 +1,29 @@
+# Official PostgreSQL image (not Bitnami: since 2025 Bitnami's free images are no longer
+# versioned or updated, so they're a poor default for new projects).
+image:
+  repository: postgres
+  tag: 18-alpine
+  pullPolicy: IfNotPresent
+
+auth:
+  database: shiplog
+  username: shiplog
+  # Leave empty to generate a random password on first install. It is kept across upgrades
+  # (and uninstalls) so it keeps matching the data already on the volume.
+  password: ""
+
+persistence:
+  size: 1Gi
+  # Empty = the cluster's default StorageClass
+  # (kind: local-path, AKS: managed-csi / Azure Disk, EKS: gp3 / EBS).
+  storageClass: ""
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+nodeSelector: {}
+tolerations: []

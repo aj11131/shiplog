@@ -15,7 +15,7 @@ Users post short entries to a shared ship's log. Every entry is stamped with the
 | Step | What | Status |
 |---|---|---|
 | 1 | App code, unit tests, Docker Compose, local telemetry | ✅ [notes](docs/01-local-app.md) |
-| 2 | Helm chart on a local kind cluster | ⏳ |
+| 2 | Helm chart on a local kind cluster | ✅ [notes](docs/02-helm-kind.md) |
 | 3 | Terraform + CI/CD for AKS, Azure observability stack | ⏳ |
 | 4 | Entra ID sign-in | ⏳ |
 | 5 | Add EKS | ⏳ |
@@ -52,6 +52,18 @@ To use PostgreSQL instead of SQLite:
 docker compose -f compose.yaml -f compose.postgres.yaml up --build
 ```
 
+### Option C: Kubernetes (kind + Helm)
+
+Prerequisites: Docker Desktop, kind, kubectl, Helm.
+
+```powershell
+./scripts/kind-up.ps1     # 3-node cluster, builds images, installs the chart, runs helm test
+./scripts/kind-down.ps1   # delete the cluster
+```
+
+- App: http://localhost:8090
+- Telemetry: http://localhost:18890
+
 ## Tests
 
 ```bash
@@ -60,7 +72,7 @@ cd src/web && npm run test:ci         # Vitest: services, interceptor, component
 cd src/web && npm run lint            # angular-eslint
 ```
 
-CI runs all of this on every pull request ([.github/workflows/app-ci.yml](.github/workflows/app-ci.yml)).
+CI runs all of this on every pull request ([app-ci.yml](.github/workflows/app-ci.yml)). Chart changes are linted, schema-validated and deployed to a throwaway kind cluster ([chart-ci.yml](.github/workflows/chart-ci.yml)).
 
 ## Repository layout
 
@@ -70,6 +82,8 @@ src/web/            Angular client + nginx config
 compose*.yaml       Local container stack
 docs/               Per-step learning notes
 .github/workflows/  CI/CD
-charts/             (step 2) Helm chart
+charts/shiplog/     Helm chart (+ postgres subchart)
+deploy/kind/        kind cluster config
+scripts/            kind-up.ps1 / kind-down.ps1
 infra/              (step 3+) Terraform
 ```

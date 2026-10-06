@@ -1,0 +1,104 @@
+# Default values for the Shiplog chart.
+# Per-environment overrides live next to this file: values-kind.yaml (step 2),
+# values-aks.yaml (step 3), values-eks.yaml (step 5).
+
+# Where this release runs. Shown in the UI and stamped on every log entry.
+environment:
+  name: dev # label shown in the web header
+  cloud: unknown # kind | aks | eks
+  region: unknown
+  cluster: unknown
+
+# Shared image settings. Each component sets its own repository.
+image:
+  registry: "" # e.g. shiplogacr.azurecr.io; empty = images already on the nodes (kind)
+  tag: "" # defaults to the chart's appVersion
+  pullPolicy: IfNotPresent
+
+api:
+  image:
+    repository: shiplog-api
+  replicaCount: 2
+  # The HPA measures CPU as a percentage of the request, so set the request to realistic idle-plus-load usage.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+  # Apply EF Core migrations in an init container before the API starts.
+  migrations:
+    enabled: true
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  serviceAccount:
+    # Step 3: cloud identity (Azure Workload Identity / EKS Pod Identity) is attached here.
+    annotations: {}
+  podLabels: {}
+  extraEnv: []
+  nodeSelector: {}
+  tolerations: []
+
+web:
+  image:
+    repository: shiplog-web
+  replicaCount: 2
+  service:
+    type: ClusterIP
+    port: 80
+    nodePort: null # only used when type is NodePort
+  appInsightsConnectionString: ""
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  nodeSelector: {}
+  tolerations: []
+
+# In-cluster PostgreSQL (subchart in charts/postgres). See its values.yaml for options.
+postgres:
+  enabled: true
+
+# Used only when postgres.enabled=false, e.g. Azure Database for PostgreSQL or Amazon RDS.
+database:
+  external:
+    host: ""
+    port: 5432
+    name: shiplog
+    username: shiplog
+    existingSecret: "" # Secret holding the password
+    passwordKey: password
+    sslMode: Require
+
+telemetry:
+  # OTLP/gRPC endpoint for traces, metrics and logs. Empty = export disabled.
+  # Step 3 points this at the OpenTelemetry Collector.
+  otlpEndpoint: ""
+
+# Standalone Aspire dashboard for viewing telemetry inside a dev cluster.
+# When enabled (and telemetry.otlpEndpoint is empty), the API sends telemetry to it.
+devDashboard:
+  enabled: false
+  image:
+    repository: mcr.microsoft.com/dotnet/aspire-dashboard
+    tag: "13.6"
+  service:
+    type: ClusterIP
+    nodePort: null
+
+# Ingress-only NetworkPolicies: web is reachable from anywhere, api only from web,
+# postgres only from api. Needs a CNI that enforces policies (kindnet, Azure CNI with
+# Cilium/NPM, the EKS VPC CNI with network policy turned on).
+networkPolicy:
+  enabled: true

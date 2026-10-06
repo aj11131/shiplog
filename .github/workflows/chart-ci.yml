@@ -1,0 +1,99 @@
+# Continuous integration for the Helm chart.
+#  1. lint:  helm lint + render the chart with each values file and validate the output
+#            against the Kubernetes API schemas (kubeconform).
+#  2. e2e:   create a real kind cluster on the runner, deploy with the same script you run
+#            locally (scripts/kind-up.ps1), and run `helm test`.
+name: Chart CI
+
+on:
+  pull_request:
+    paths:
+      - "charts/**"
+      - "src/**"
+      - "deploy/kind/**"
+      - "scripts/kind-*.ps1"
+      - ".github/workflows/chart-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "charts/**"
+      - "src/**"
+      - "deploy/kind/**"
+      - "scripts/kind-*.ps1"
+      - ".github/workflows/chart-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HELM_VERSION: v4.3.0
+  KUBECONFORM_VERSION: v0.8.0
+
+jobs:
+  lint:
+    name: Lint & validate manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: azure/setup-helm@v5
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install kubeconform
+        run: |
+          curl -sSL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+            | tar -xz -C /usr/local/bin kubeconform
+
+      - name: helm lint
+        run: helm lint charts/shiplog --strict -f charts/shiplog/values-kind.yaml
+
+      # Render every supported configuration and check the YAML is valid Kubernetes.
+      - name: Render & validate
+        run: |
+          set -euo pipefail
+          render() { helm template shiplog charts/shiplog --namespace shiplog "$@"; }
+          validate() { kubeconform -strict -summary -output text; }
+
+          echo "--- defaults";           render | validate
+          echo "--- kind";               render -f charts/shiplog/values-kind.yaml | validate
+          echo "--- external database";  render --set postgres.enabled=false \
+                                                  --set database.external.host=db.example.com \
+                                                  --set-string database.external.existingSecret=yes | validate  # "yes" must stay a string
+          echo "--- registry + tag";     render --set image.registry=example.azurecr.io --set image.tag=1.2.3 \
+                                           | grep -q 'image: example.azurecr.io/shiplog-api:1.2.3'
+
+  e2e:
+    name: Deploy to kind & helm test
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: azure/setup-helm@v5
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install kind
+        uses: helm/kind-action@v1
+        with:
+          install_only: true
+
+      # Same script as local development: creates the cluster, builds and loads images,
+      # installs metrics-server and the chart, then runs `helm test`.
+      - name: Deploy
+        shell: pwsh
+        run: ./scripts/kind-up.ps1
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          kubectl get all,pvc,networkpolicy -n shiplog -o wide || true
+          kubectl get events -n shiplog --sort-by=.lastTimestamp | tail -40 || true
+          kubectl describe pods -n shiplog | tail -150 || true
+          kubectl logs -n shiplog -l app.kubernetes.io/component=api --all-containers --tail=50 || true

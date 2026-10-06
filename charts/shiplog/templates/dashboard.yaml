@@ -1,0 +1,75 @@
+{{- if .Values.devDashboard.enabled }}
+{{- $c := dict "root" $ "component" "dashboard" -}}
+{{- $name := include "shiplog.componentName" $c -}}
+# Aspire dashboard: an in-memory OpenTelemetry viewer for dev clusters only.
+# Data is lost when the pod restarts and there is no login, so never enable it in a shared environment.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "shiplog.labels" $c | nindent 4 }}
+spec:
+  type: {{ .Values.devDashboard.service.type }}
+  selector:
+    {{- include "shiplog.selectorLabels" $c | nindent 4 }}
+  ports:
+    - name: ui
+      port: 18888
+      targetPort: ui
+      {{- if and (eq .Values.devDashboard.service.type "NodePort") .Values.devDashboard.service.nodePort }}
+      nodePort: {{ .Values.devDashboard.service.nodePort }}
+      {{- end }}
+    - name: otlp-grpc
+      port: 18889
+      targetPort: otlp-grpc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "shiplog.labels" $c | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "shiplog.selectorLabels" $c | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "shiplog.labels" $c | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "shiplog.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: dashboard
+          image: "{{ .Values.devDashboard.image.repository }}:{{ .Values.devDashboard.image.tag }}"
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ASPIRE_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS
+              value: "true"
+          ports:
+            - name: ui
+              containerPort: 18888
+            - name: otlp-grpc
+              containerPort: 18889
+          readinessProbe:
+            tcpSocket:
+              port: ui
+          securityContext:
+            {{- include "shiplog.containerSecurityContext" . | nindent 12 }}
+          resources:
+            requests:
+              cpu: 20m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}

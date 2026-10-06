@@ -17,7 +17,7 @@ public class DatabaseOptions
 
     /// <summary>
     /// Apply EF Core migrations when the app starts. Handy locally; in Kubernetes
-    /// migrations run once in a separate Job instead (see "--migrate-only").
+    /// an init container runs "--migrate-only" before the API starts instead.
     /// </summary>
     public bool MigrateOnStartup { get; set; }
 }

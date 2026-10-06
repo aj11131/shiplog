@@ -1,0 +1,41 @@
+# `helm test <release>` runs this pod once and reports pass/fail.
+# It goes through the same path a browser does (web -> nginx -> api -> postgres),
+# so it also exercises the NetworkPolicies.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "shiplog.fullname" . }}-smoke-test
+  labels:
+    {{- include "shiplog.labels" (dict "root" $ "component" "test") | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 100 # curl_user in the curl image
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: smoke
+      image: curlimages/curl:8.22.0
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+      env:
+        - name: WEB
+          value: "http://{{ include "shiplog.componentName" (dict "root" $ "component" "web") }}:{{ .Values.web.service.port }}"
+      command: ["/bin/sh", "-ec"]
+      args:
+        - |
+          echo "1) web is up";               curl -fsS "$WEB/healthz"
+          echo; echo "2) runtime config";    curl -fsS "$WEB/config.json"
+          echo; echo "3) api + database";    curl -fsS "$WEB/api/diagnostics" | tee /dev/stderr | grep -q '"databaseReachable":true'
+          echo; echo "4) write an entry"
+          curl -fsS -X POST "$WEB/api/entries" -H 'Content-Type: application/json' \
+            -d '{"author":"helm test","message":"Smoke test passed."}'
+          echo; echo "All checks passed."

@@ -1,0 +1,16 @@
+# Headless Service (clusterIP: None): DNS for this name resolves straight to the pod IP
+# instead of a virtual IP. StatefulSets use it to give each pod a stable network identity.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "postgres.fullname" . }}
+  labels:
+    {{- include "postgres.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "postgres.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres

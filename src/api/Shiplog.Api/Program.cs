@@ -20,7 +20,7 @@ builder.AddShiplogTelemetry(runtime);
 var app = builder.Build();
 
 // `dotnet Shiplog.Api.dll --migrate-only` applies migrations and exits.
-// The Helm chart runs this as a Job before each release, so API pods never race to migrate.
+// The Helm chart runs this in an init container, so migrations finish before the API container starts.
 if (args.Contains("--migrate-only"))
 {
     await app.Services.MigrateDatabaseAsync();

@@ -1,0 +1,19 @@
+# Local cluster: one control plane + two workers, so pods land on different nodes and
+# the "node" stamp in the app actually varies.
+#   kind create cluster --config deploy/kind/kind-config.yaml   (or scripts/kind-up.ps1)
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: shiplog
+nodes:
+  - role: control-plane
+    # kind nodes are Docker containers, so a NodePort is only reachable from Windows
+    # if it is mapped to a host port here. (Compose uses 8080/18888, so these don't clash.)
+    extraPortMappings:
+      - containerPort: 30080 # web NodePort
+        hostPort: 8090
+        protocol: TCP
+      - containerPort: 30888 # dev dashboard NodePort
+        hostPort: 18890
+        protocol: TCP
+  - role: worker
+  - role: worker

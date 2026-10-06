@@ -23,7 +23,7 @@ browser ──► web (nginx :8080) ──/api/*──► api (ASP.NET :8080) �
 Things worth reading in the code:
 
 - **One codebase, two databases.** [ShiplogDbContext.cs](../src/api/Shiplog.Api/Data/ShiplogDbContext.cs) has an abstract context and a subclass per provider, each with its own migrations (`Migrations/Sqlite`, `Migrations/Postgres`). `Database__Provider` picks one at startup.
-- **Migrations as a separate step.** `dotnet Shiplog.Api.dll --migrate-only` applies migrations and exits. Locally the API also migrates on startup. In Kubernetes, step 2 runs this as a Helm hook Job, so that three API replicas don't all try to migrate at the same moment.
+- **Migrations as a separate step.** `dotnet Shiplog.Api.dll --migrate-only` applies migrations and exits. Locally the API also migrates on startup. In Kubernetes, step 2 runs it in an init container before the API starts (see [docs/02](02-helm-kind.md) for why not a Helm hook Job).
 - **Where am I running?** [RuntimeInfo.cs](../src/api/Shiplog.Api/Diagnostics/RuntimeInfo.cs) binds `Runtime__Cloud`, `Runtime__Node`, etc. from env vars. In Kubernetes the node and pod names come from the *Downward API*. Every response also carries an `X-Served-By: <pod>` header.
 - **Telemetry is vendor-neutral.** [TelemetryExtensions.cs](../src/api/Shiplog.Api/Telemetry/TelemetryExtensions.cs) sends OTLP to whatever `OTEL_EXPORTER_OTLP_ENDPOINT` points at. The code doesn't change between the local dashboard and Azure Monitor; only the endpoint does. There's also a custom metric, `shiplog.entries.created`.
 - **Logs are JSON in containers** (one object per line, easy for a log collector to parse) and plain text in Development.
