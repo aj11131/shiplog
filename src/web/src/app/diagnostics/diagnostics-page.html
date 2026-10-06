@@ -1,0 +1,82 @@
+<section class="card">
+  <div class="header">
+    <h2>API instance</h2>
+    <button type="button" class="secondary" (click)="refresh()">Refresh</button>
+  </div>
+
+  @if (error()) {
+    <p class="banner-error" role="alert">{{ error() }}</p>
+  }
+
+  @if (diagnostics(); as d) {
+    <dl>
+      <dt>Cloud</dt>
+      <dd>{{ d.cloud }}</dd>
+      <dt>Region</dt>
+      <dd>{{ d.region }}</dd>
+      <dt>Cluster</dt>
+      <dd>{{ d.cluster }}</dd>
+      <dt>Node</dt>
+      <dd>{{ d.node }}</dd>
+      <dt>Pod</dt>
+      <dd>{{ d.pod }}</dd>
+      <dt>Version</dt>
+      <dd>{{ d.version }}</dd>
+      <dt>Environment</dt>
+      <dd>{{ d.environment }}</dd>
+      <dt>Database</dt>
+      <dd>
+        {{ d.databaseProvider }}
+        <span class="chip" [class.ok]="d.databaseReachable" [class.bad]="!d.databaseReachable">
+          {{ d.databaseReachable ? 'reachable' : 'unreachable' }}
+        </span>
+      </dd>
+      <dt>Server time</dt>
+      <dd>{{ d.serverTimeUtc | date: 'medium' : 'UTC' }} UTC</dd>
+    </dl>
+  }
+</section>
+
+<section class="card">
+  <div class="header">
+    <h2>Load balancing</h2>
+    <span>
+      <button type="button" (click)="burst()">Send 20 requests</button>
+      <button type="button" class="secondary" (click)="servedBy.reset()">Reset</button>
+    </span>
+  </div>
+  <p class="muted">
+    Which API pods have answered this browser. With more than one replica, requests should spread
+    across pods.
+  </p>
+  <table>
+    <thead>
+      <tr>
+        <th>Pod</th>
+        <th>Requests</th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (row of servedBy.pods(); track row.pod) {
+        <tr>
+          <td>{{ row.pod }}</td>
+          <td>{{ row.requests }}</td>
+        </tr>
+      } @empty {
+        <tr>
+          <td colspan="2" class="muted">No responses yet.</td>
+        </tr>
+      }
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Browser</h2>
+  <dl>
+    <dt>Environment</dt>
+    <dd>{{ environment }}</dd>
+    <dt>App Insights</dt>
+    <dd>{{ telemetryEnabled ? 'enabled' : 'disabled (no connection string)' }}</dd>
+  </dl>
+</section>

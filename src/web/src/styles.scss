@@ -1,0 +1,133 @@
+:root {
+  color-scheme: light dark;
+  --navy: #12304f;
+  --brass: #c9a227;
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --text: #1b2430;
+  --muted: #5d6b7c;
+  --border: #d9dee5;
+  --accent: #1f5f9e;
+  --danger: #b3261e;
+  --ok: #1e7b45;
+
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  line-height: 1.5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1722;
+    --surface: #172231;
+    --text: #e6ebf1;
+    --muted: #9aa8b8;
+    --border: #2a3a4e;
+    --accent: #6aa8e8;
+    --danger: #f2827a;
+    --ok: #5fcf8f;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+h2 {
+  font-size: 1.1rem;
+  margin: 0 0 0.75rem;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+input,
+textarea {
+  font: inherit;
+  font-weight: 400;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+button {
+  font: inherit;
+  padding: 0.45rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  &.secondary {
+    background: transparent;
+    color: var(--accent);
+  }
+
+  &.link {
+    border: none;
+    background: none;
+    padding: 0;
+    color: var(--danger);
+    font-size: 0.85rem;
+  }
+}
+
+.chip {
+  display: inline-block;
+  font-size: 0.75rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+
+  &.ok {
+    color: var(--ok);
+    border-color: var(--ok);
+  }
+
+  &.bad {
+    color: var(--danger);
+    border-color: var(--danger);
+  }
+}
+
+header .chip {
+  color: var(--brass);
+  border-color: var(--brass);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.field-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
+.banner-error {
+  margin: 1rem 0;
+  padding: 0.75rem;
+  border-radius: 6px;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+}

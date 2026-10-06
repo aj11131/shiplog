@@ -1,0 +1,77 @@
+<section class="card">
+  <h2>New entry</h2>
+  <form [formGroup]="form" (ngSubmit)="submit()">
+    <label>
+      Author
+      <input
+        formControlName="author"
+        [maxlength]="authorMax"
+        autocomplete="nickname"
+        placeholder="Captain"
+      />
+    </label>
+    @if (form.controls.author.touched && form.controls.author.invalid) {
+      <p class="field-error">Author is required (max {{ authorMax }} characters).</p>
+    }
+
+    <label>
+      Message
+      <textarea
+        formControlName="message"
+        [maxlength]="messageMax"
+        rows="3"
+        placeholder="What happened on deck?"
+      ></textarea>
+    </label>
+    <p class="hint">{{ form.controls.message.value.length }} / {{ messageMax }}</p>
+    @if (form.controls.message.touched && form.controls.message.invalid) {
+      <p class="field-error">Message is required (max {{ messageMax }} characters).</p>
+    }
+
+    <button type="submit" [disabled]="saving()">{{ saving() ? 'Saving…' : 'Add to log' }}</button>
+  </form>
+</section>
+
+@if (error()) {
+  <p class="banner-error" role="alert">{{ error() }}</p>
+}
+
+<section>
+  <div class="list-header">
+    <h2>Recent entries</h2>
+    <button type="button" class="secondary" (click)="refresh()" [disabled]="loading()">
+      Refresh
+    </button>
+  </div>
+
+  @if (loading() && entries().length === 0) {
+    <p class="muted">Loading…</p>
+  } @else {
+    <ul class="entries">
+      @for (entry of entries(); track entry.id) {
+        <li class="card entry">
+          <p class="message">{{ entry.message }}</p>
+          <p class="meta">
+            <strong>{{ entry.author }}</strong> · {{ entry.createdAtUtc | date: 'medium' }}
+          </p>
+          <p class="stamp" title="Where this entry was written">
+            <span class="chip">{{ entry.cloud }}</span>
+            <span class="chip">{{ entry.cluster }}</span>
+            <span class="chip">node {{ entry.node }}</span>
+            <span class="chip">pod {{ entry.pod }}</span>
+          </p>
+          <button
+            type="button"
+            class="link"
+            (click)="remove(entry)"
+            [attr.aria-label]="'Delete entry by ' + entry.author"
+          >
+            Delete
+          </button>
+        </li>
+      } @empty {
+        <li class="muted">The log is empty. Write the first entry.</li>
+      }
+    </ul>
+  }
+</section>

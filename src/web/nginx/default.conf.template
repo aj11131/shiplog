@@ -1,0 +1,50 @@
+# Rendered at container start by the nginx image's envsubst step.
+# ${UPPER_CASE} values come from environment variables; $lower_case are nginx variables.
+
+server {
+    listen 8080;
+    server_name _;
+    root /usr/share/nginx/html;
+    server_tokens off;
+
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+
+    # Runtime settings for the Angular app (see src/app/core/app-config.ts).
+    location = /config.json {
+        include /etc/nginx/snippets/security-headers.conf;
+        add_header Cache-Control "no-store" always;
+        default_type application/json;
+        return 200 '{"apiBaseUrl":"${API_BASE_URL}","appInsightsConnectionString":"${APPINSIGHTS_CONNECTION_STRING}","environment":"${SHIPLOG_ENVIRONMENT}"}';
+    }
+
+    # Same-origin API: the browser calls /api/... on this host and nginx forwards it,
+    # so no CORS setup is needed. "^~" stops the static-file regex below from matching /api/ URLs.
+    location ^~ /api/ {
+        proxy_pass ${API_UPSTREAM};
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Probe endpoint for nginx itself (Kubernetes liveness/readiness of the web pod).
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 'ok';
+    }
+
+    # Hashed build output never changes, so it can be cached for a year.
+    location ~* \.(?:js|css|woff2?|svg|ico|png)$ {
+        include /etc/nginx/snippets/security-headers.conf;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        try_files $uri =404;
+    }
+
+    # Everything else is the single-page app; unknown paths fall back to index.html for client-side routing.
+    location / {
+        include /etc/nginx/snippets/security-headers.conf;
+        add_header Cache-Control "no-cache" always;
+        try_files $uri $uri/ /index.html;
+    }
+}

@@ -1,0 +1,52 @@
+# Local stack: web (nginx + Angular) -> api (ASP.NET) -> SQLite file, with telemetry
+# going to the Aspire dashboard.
+#
+#   docker compose up --build             # SQLite
+#   docker compose -f compose.yaml -f compose.postgres.yaml up --build   # PostgreSQL
+#
+#   App:        http://localhost:8080
+#   Telemetry:  http://localhost:18888
+name: shiplog
+
+services:
+  api:
+    build:
+      context: src/api
+      args:
+        VERSION: 0.1.0-local
+    image: shiplog-api:local
+    environment:
+      Database__Provider: Sqlite
+      Database__MigrateOnStartup: "true"
+      Runtime__Cloud: docker
+      Runtime__Region: local
+      Runtime__Cluster: compose
+      # Every signal (traces, metrics, logs) goes to the dashboard over OTLP/gRPC.
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://aspire-dashboard:18889
+    volumes:
+      - api-data:/data
+    depends_on:
+      - aspire-dashboard
+
+  web:
+    build: src/web
+    image: shiplog-web:local
+    ports:
+      - "8080:8080"
+    environment:
+      API_UPSTREAM: http://api:8080
+      SHIPLOG_ENVIRONMENT: docker
+    depends_on:
+      - api
+
+  aspire-dashboard:
+    # A standalone OpenTelemetry viewer. In the cloud, Azure Monitor plays this role.
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:13.6
+    ports:
+      - "18888:18888"
+    environment:
+      # Local only: no login on the dashboard.
+      ASPIRE_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
+
+volumes:
+  api-data:

@@ -1,0 +1,28 @@
+# Override that swaps SQLite for PostgreSQL, matching what runs in the cluster:
+#   docker compose -f compose.yaml -f compose.postgres.yaml up --build
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: shiplog
+      POSTGRES_USER: shiplog
+      # Local-only throwaway password. In the cluster the password comes from a Kubernetes Secret.
+      POSTGRES_PASSWORD: shiplog-local-only
+    volumes:
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shiplog -d shiplog"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    environment:
+      Database__Provider: Postgres
+      ConnectionStrings__Shiplog: Host=db;Database=shiplog;Username=shiplog;Password=shiplog-local-only
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db-data:

@@ -1,0 +1,26 @@
+# Manual requests for the Shiplog API (VS Code REST Client / Visual Studio / Rider).
+@api = http://localhost:5253
+
+GET {{api}}/api/diagnostics
+
+###
+GET {{api}}/api/entries?limit=10
+
+###
+POST {{api}}/api/entries
+Content-Type: application/json
+
+{
+  "author": "Captain",
+  "message": "Fair winds. All hands on deck."
+}
+
+###
+# Validation failure -> 400 with problem details
+POST {{api}}/api/entries
+Content-Type: application/json
+
+{ "author": "", "message": "" }
+
+###
+GET {{api}}/healthz/ready

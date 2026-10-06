@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Shiplog.Api.Tests/Shiplog.Api.Tests.csproj" />
+  <Project Path="Shiplog.Api/Shiplog.Api.csproj" />
+</Solution>
