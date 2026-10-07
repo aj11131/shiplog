@@ -19,7 +19,7 @@ variable "kubernetes_version" {
 variable "node_vm_size" {
   description = "VM size for the node pool."
   type        = string
-  default     = "Standard_D2als_v7" # 2 vCPU / 4 GiB AMD. Check what your subscription allows: az vm list-skus -l <region> --size Standard_D2
+  default     = "Standard_D2as_v4" # 2 vCPU / 8 GiB AMD. AKS allows fewer sizes than plain VMs; the authoritative list is in the error AKS returns for a disallowed size.
 }
 
 variable "node_count" {

@@ -30,16 +30,16 @@ They're separate stacks because they have **different lifecycles**. You'll destr
 
 | Resource | ~Monthly | Notes |
 |---|---|---|
-| 2 × Standard_D2als_v7 nodes | $118 | fixed at 2: the subscription's 4-vCPU quota (see below) |
+| 2 × Standard_D2as_v4 nodes (2 vCPU / 8 GB) | $140 | fixed at 2: the subscription's 4-vCPU quota (see below) |
 | OS disks, Postgres disk | $12 | |
 | Load balancer + 2 public IPs | $25 | outbound + web |
 | ACR Basic | $5 | |
 | AKS control plane | $0 | Free tier, no SLA |
 | Log Analytics / App Insights | ~$0 | first 5 GB/month free; 1 GB/day hard cap |
 | State storage | <$1 | |
-| **Total while the cluster runs** | **≈ $160/month ≈ $5/day** | |
+| **Total while the cluster runs** | **≈ $180/month ≈ $6/day** | |
 
-**About the quota:** new pay-as-you-go subscriptions get **4 vCPUs per region** (total and per VM family), and some sizes aren't offered at all. The first apply failed because `Standard_B2als_v2` isn't available to this subscription in centralus. Two nodes with 2 vCPU each use the whole quota, so the pool has no autoscaling. **Automatic upgrades are off too** (`auto_upgrades = false`). AKS upgrades a system pool by adding a temporary *surge* node, and it rejects the drain-in-place alternative (`maxUnavailable`) for system pools; a third node doesn't fit in 4 vCPU. Until the quota is raised, patching is manual: raise the quota first, then run `az aks nodepool upgrade --node-image-only`. Check what you can use with `az vm list-usage -l centralus -o table` and `az vm list-skus -l centralus --size Standard_D2 -o table`. To raise the limit: Portal → *Quotas* → *Compute* → centralus.
+**About the quota:** new pay-as-you-go subscriptions get **4 vCPUs per region** (total and per VM family), and some sizes aren't offered at all. The first apply failed because `Standard_B2als_v2` isn't available to this subscription in centralus. Two nodes with 2 vCPU each use the whole quota, so the pool has no autoscaling. **Automatic upgrades are off too** (`auto_upgrades = false`). AKS upgrades a system pool by adding a temporary *surge* node, and it rejects the drain-in-place alternative (`maxUnavailable`) for system pools; a third node doesn't fit in 4 vCPU. Until the quota is raised, patching is manual: raise the quota first, then run `az aks nodepool upgrade --node-image-only`. Check quota with `az vm list-usage -l <region> -o table`. **AKS allows fewer VM sizes than plain VMs:** `az vm list-skus` said `Standard_D2als_v7` was available in westus3, but AKS rejected it. I couldn't find a command that lists AKS's allowed sizes ahead of time. The reliable list is in the error AKS returns, so when a size is rejected, read the full message in the workflow log (`gh run view <id> --log-failed`). To raise the limit: Portal → *Quotas* → *Compute* → centralus.
 
 **About regional capacity:** creating the cluster in centralus failed with `AKSCapacityHeavyUsage`. When a region is short on AKS capacity, Microsoft blocks new clusters for non-Enterprise subscriptions first, and its advice for dev/test is to [use another region](https://learn.microsoft.com/troubleshoot/azure/azure-kubernetes/error-codes/akscapacityheavyusage-error). That's why the cluster lives in **westus3** while the other stacks stay in centralus. Changing `location` forces Terraform to **replace** (destroy and recreate) the stack's resource group and everything in it, because Azure resources can't move regions in place. The group name includes the region (`rg-shiplog-dev-aks-westus3`) for a second reason: the AKS module marks one of its resources `create_before_destroy`, and Terraform propagates that to everything the resource depends on, including the resource group. A create-before-destroy replacement needs the new name to differ from the old one; with a fixed name the apply fails with *"a resource with the ID … already exists"*. Watch for `+/-` (create first) versus `-/+` (destroy first) in plans.
 
