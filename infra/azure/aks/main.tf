@@ -53,8 +53,12 @@ data "azurerm_user_assigned_identity" "deployer" {
   resource_group_name = var.tfstate_resource_group
 }
 
+# The region is part of the name. The AKS module marks a resource create_before_destroy,
+# and Terraform propagates that to everything the resource depends on, including this
+# group. So moving regions creates the NEW group before deleting the old one, which only
+# works if the two names differ.
 resource "azurerm_resource_group" "this" {
-  name     = "rg-${local.name}-aks"
+  name     = "rg-${local.name}-aks-${var.location}"
   location = var.location
   tags     = local.tags
 }
@@ -89,7 +93,7 @@ module "aks" {
   location            = azurerm_resource_group.this.location
   parent_id           = azurerm_resource_group.this.id
   dns_prefix          = "aks-${local.name}"
-  node_resource_group = "rg-${local.name}-aks-nodes" # where AKS puts the VMs, disks, load balancer
+  node_resource_group = "rg-${local.name}-aks-${var.location}-nodes" # where AKS puts the VMs, disks, load balancer
   kubernetes_version  = var.kubernetes_version
   enable_telemetry    = false # don't send AVM usage telemetry to Microsoft
   tags                = local.tags

@@ -11,7 +11,7 @@
            [approval: dev]  ├(OIDC: apply identity)────────┤
          Deploy to AKS ─────┘                              ▼
                                                         Azure
-  ┌ rg-shiplog-mgmt ─────────┐ ┌ rg-shiplog-observability ─────────────┐ ┌ rg-shiplog-dev-aks ──────────────┐
+  ┌ rg-shiplog-mgmt ─────────┐ ┌ rg-shiplog-observability ─────────────┐ ┌ rg-shiplog-dev-aks-westus3 ──────────────┐
   │ Terraform state (blob)   │ │ Log Analytics ◄─┐                      │ │ AKS (Entra RBAC, Cilium)         │
   │ id-shiplog-github-plan   │ │ App Insights    ├─ DCR ◄─ DCE ◄────────┼─┼─ OTel Collector (Workload ID)   │
   │ id-shiplog-github-apply  │ │ Monitor wkspace ◄┘ (OTLP endpoints)    │ │ ACR (AcrPull for the nodes)      │
@@ -41,7 +41,7 @@ They're separate stacks because they have **different lifecycles**. You'll destr
 
 **About the quota:** new pay-as-you-go subscriptions get **4 vCPUs per region** (total and per VM family), and some sizes aren't offered at all. The first apply failed because `Standard_B2als_v2` isn't available to this subscription in centralus. Two nodes with 2 vCPU each use the whole quota, so the pool has no autoscaling. **Automatic upgrades are off too** (`auto_upgrades = false`). AKS upgrades a system pool by adding a temporary *surge* node, and it rejects the drain-in-place alternative (`maxUnavailable`) for system pools; a third node doesn't fit in 4 vCPU. Until the quota is raised, patching is manual: raise the quota first, then run `az aks nodepool upgrade --node-image-only`. Check what you can use with `az vm list-usage -l centralus -o table` and `az vm list-skus -l centralus --size Standard_D2 -o table`. To raise the limit: Portal → *Quotas* → *Compute* → centralus.
 
-**About regional capacity:** creating the cluster in centralus failed with `AKSCapacityHeavyUsage`. When a region is short on AKS capacity, Microsoft blocks new clusters for non-Enterprise subscriptions first, and its advice for dev/test is to [use another region](https://learn.microsoft.com/troubleshoot/azure/azure-kubernetes/error-codes/akscapacityheavyusage-error). That's why the cluster lives in **westus3** while the other stacks stay in centralus. Changing `location` forces Terraform to **replace** (destroy and recreate) the stack's resource group and everything in it, because Azure resources can't move regions in place.
+**About regional capacity:** creating the cluster in centralus failed with `AKSCapacityHeavyUsage`. When a region is short on AKS capacity, Microsoft blocks new clusters for non-Enterprise subscriptions first, and its advice for dev/test is to [use another region](https://learn.microsoft.com/troubleshoot/azure/azure-kubernetes/error-codes/akscapacityheavyusage-error). That's why the cluster lives in **westus3** while the other stacks stay in centralus. Changing `location` forces Terraform to **replace** (destroy and recreate) the stack's resource group and everything in it, because Azure resources can't move regions in place. The group name includes the region (`rg-shiplog-dev-aks-westus3`) for a second reason: the AKS module marks one of its resources `create_before_destroy`, and Terraform propagates that to everything the resource depends on, including the resource group. A create-before-destroy replacement needs the new name to differ from the old one; with a fixed name the apply fails with *"a resource with the ID … already exists"*. Watch for `+/-` (create first) versus `-/+` (destroy first) in plans.
 
 **Destroy the cluster when you're not using it:** Actions → *Terraform Destroy* → `aks-dev`. Observability and bootstrap cost almost nothing to keep.
 
@@ -159,7 +159,7 @@ browser ──App Insights JS SDK──────────────► A
 ## Working with the cluster from your laptop
 
 ```powershell
-az aks get-credentials -g rg-shiplog-dev-aks -n aks-shiplog-dev
+az aks get-credentials -g rg-shiplog-dev-aks-westus3 -n aks-shiplog-dev
 kubelogin convert-kubeconfig -l azurecli
 kubectl get nodes -o wide
 kubectl get pods -A
