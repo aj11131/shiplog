@@ -7,7 +7,7 @@ location    = "westus3" # centralus: AKSCapacityHeavyUsage (new clusters blocked
 #   2 nodes × 2 vCPU = 4: the whole quota. There's no room for an autoscaled node or for the
 #   surge node every upgrade needs, so automatic upgrades are off (patch manually for now).
 # After a quota increase (≥ 6 vCPU): auto_upgrades = true; (≥ 10): node_autoscaling = { min = 2, max = 4 }
-node_vm_size     = "Standard_D2als_v7"
+node_vm_size     = "Standard_D2as_v4" # 2 vCPU / 8 GiB AMD; on AKS's allowed list for this subscription in westus3
 node_count       = 2
 node_autoscaling = null
 auto_upgrades    = false
