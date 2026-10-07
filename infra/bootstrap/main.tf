@@ -197,3 +197,44 @@ module "github_apply" {
     }
   }
 }
+
+# ---------------------------------------------------------------------------
+# 4. Microsoft Graph permissions for the CI identities (step 4: Entra ID)
+#
+# The infra/azure/identity stack manages Shiplog's app registrations through CI.
+# Graph "application permissions" are app roles on the Microsoft Graph service
+# principal; assigning one IS the admin consent, which is why this runs locally
+# as a Global Administrator rather than from CI.
+#
+# Deliberately NOT granted: AppRoleAssignment.ReadWrite.All. An identity holding it can
+# grant itself any Graph permission (it's effectively tenant admin), so assigning users
+# to Shiplog's app roles stays a one-time manual step (see docs/04-entra-https.md).
+# ---------------------------------------------------------------------------
+data "azuread_application_published_app_ids" "well_known" {}
+
+data "azuread_service_principal" "msgraph" {
+  client_id = data.azuread_application_published_app_ids.well_known.result["MicrosoftGraph"]
+}
+
+locals {
+  graph_permissions = {
+    # Plan reads app registrations to compare them with the code.
+    plan_application_read = {
+      principal = module.github_plan.principal_id
+      role      = "Application.Read.All"
+    }
+    # Apply can create app registrations, and manage only the ones it created/owns.
+    apply_application_owned = {
+      principal = module.github_apply.principal_id
+      role      = "Application.ReadWrite.OwnedBy"
+    }
+  }
+}
+
+resource "azuread_app_role_assignment" "graph" {
+  for_each = local.graph_permissions
+
+  principal_object_id = each.value.principal
+  resource_object_id  = data.azuread_service_principal.msgraph.object_id
+  app_role_id         = data.azuread_service_principal.msgraph.app_role_ids[each.value.role]
+}

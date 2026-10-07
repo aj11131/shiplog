@@ -32,4 +32,16 @@ describe('loadConfig', () => {
 
     expect(await loadConfig(fetchFn)).toEqual(defaultConfig);
   });
+
+  it('enables auth only when all IDs are present', async () => {
+    const auth = { clientId: 'spa', tenantId: 'tenant', apiScope: 'api://api/Entries.ReadWrite' };
+    const respond = (a: unknown) =>
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ auth: a })));
+
+    expect((await loadConfig(respond(auth))).auth).toEqual(auth);
+    expect(
+      (await loadConfig(respond({ clientId: '', tenantId: '', apiScope: '' }))).auth,
+    ).toBeNull();
+    expect((await loadConfig(respond({ ...auth, apiScope: '' }))).auth).toBeNull();
+  });
 });

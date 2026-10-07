@@ -3,7 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { APP_CONFIG, defaultConfig } from '../core/app-config';
 import { SERVED_BY_HEADER, servedByInterceptor } from '../core/served-by';
-import { Diagnostics, DiagnosticsPage } from './diagnostics-page';
+import { Diagnostics, DiagnosticsPage, Me } from './diagnostics-page';
 
 const diagnostics: Diagnostics = {
   cloud: 'eks',
@@ -33,6 +33,22 @@ describe('DiagnosticsPage', () => {
     httpMock = TestBed.inject(HttpTestingController);
   });
 
+  const anonymous: Me = {
+    authEnabled: true,
+    isAuthenticated: false,
+    name: null,
+    objectId: null,
+    roles: [],
+    scopes: [],
+    isAdmin: false,
+    canWrite: false,
+  };
+
+  /** The page also asks the API who the caller is. */
+  function flushMe(me: Me = anonymous) {
+    httpMock.expectOne('/api/me').flush(me);
+  }
+
   afterEach(() => httpMock.verify());
 
   it('shows where the API is running and records the serving pod', async () => {
@@ -42,6 +58,7 @@ describe('DiagnosticsPage', () => {
     httpMock
       .expectOne('/api/diagnostics')
       .flush(diagnostics, { headers: { [SERVED_BY_HEADER]: 'shiplog-api-xyz' } });
+    flushMe();
     await fixture.whenStable();
 
     const text = (fixture.nativeElement as HTMLElement).textContent;
@@ -59,6 +76,7 @@ describe('DiagnosticsPage', () => {
     const fixture = TestBed.createComponent(DiagnosticsPage);
     await fixture.whenStable();
     httpMock.expectOne('/api/diagnostics').flush(diagnostics);
+    flushMe();
 
     fixture.componentInstance.burst(5);
 
@@ -72,10 +90,33 @@ describe('DiagnosticsPage', () => {
     await fixture.whenStable();
 
     httpMock.expectOne('/api/diagnostics').flush(null, { status: 503, statusText: 'Unavailable' });
+    flushMe();
     await fixture.whenStable();
 
     expect(
       (fixture.nativeElement as HTMLElement).querySelector('[role=alert]')?.textContent,
     ).toContain('Could not reach the API');
+  });
+
+  it("shows the signed-in user's claims as the API sees them", async () => {
+    const fixture = TestBed.createComponent(DiagnosticsPage);
+    await fixture.whenStable();
+    httpMock.expectOne('/api/diagnostics').flush(diagnostics);
+    flushMe({
+      ...anonymous,
+      isAuthenticated: true,
+      name: 'Alice',
+      objectId: 'oid-alice',
+      roles: ['Shiplog.Admin'],
+      scopes: ['Entries.ReadWrite'],
+      isAdmin: true,
+      canWrite: true,
+    });
+    await fixture.whenStable();
+
+    const text = (fixture.nativeElement as HTMLElement).textContent;
+    expect(text).toContain('oid-alice');
+    expect(text).toContain('Entries.ReadWrite');
+    expect(text).toContain('any entry (Shiplog.Admin)');
   });
 });

@@ -10,6 +10,10 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.9"
     }
+    azuread = {
+      source  = "hashicorp/azuread"
+      version = "~> 3.10"
+    }
   }
 
   # Deliberately LOCAL state. Bootstrap creates the remote-state storage account itself,
@@ -30,3 +34,6 @@ provider "azurerm" {
   # plane (creating the container) must use Entra ID.
   storage_use_azuread = true
 }
+
+# Microsoft Graph (Entra ID). Locally it authenticates as your az login.
+provider "azuread" {}

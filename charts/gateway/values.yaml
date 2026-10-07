@@ -1,0 +1,33 @@
+# The platform side of Gateway API: one shared Gateway (listeners, TLS, public IP) that
+# application teams attach HTTPRoutes to from their own namespaces.
+#
+# Prerequisites in the cluster:
+#   - Gateway API CRDs and a GatewayClass (AKS: app routing add-on, "approuting-istio")
+#   - cert-manager with Gateway API support (config.enableGatewayAPI: true)
+
+name: shiplog
+gatewayClassName: approuting-istio
+
+# Public hostname served by the Gateway (required), e.g. shiplog-dev-aj11131.westus3.cloudapp.azure.com
+hostname: ""
+
+# Azure only: DNS label for the Gateway's public IP -> <label>.<region>.cloudapp.azure.com
+azureDnsLabel: ""
+
+# Namespaces whose HTTPRoutes may attach to the HTTPS listener.
+appNamespaces:
+  - shiplog
+
+tls:
+  # Let's Encrypt via ACME HTTP-01: Let's Encrypt fetches a token from
+  # http://<hostname>/.well-known/acme-challenge/..., which cert-manager serves through a
+  # temporary HTTPRoute on this Gateway's HTTP listener. Port 80 must be reachable from the internet.
+  acme:
+    # Production issues browser-trusted certificates, with rate limits (5 duplicate certificates per week).
+    # Use the staging server (untrusted certificates, generous limits) while experimenting:
+    #   https://acme-staging-v02.api.letsencrypt.org/directory
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: "" # optional: Let's Encrypt account contact
+
+# Answer plain HTTP with a 301 to HTTPS (ACME challenges still win: Exact path matches take precedence).
+redirectHttpToHttps: true

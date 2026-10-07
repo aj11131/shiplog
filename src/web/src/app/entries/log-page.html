@@ -1,36 +1,50 @@
-<section class="card">
-  <h2>New entry</h2>
-  <form [formGroup]="form" (ngSubmit)="submit()">
-    <label>
-      Author
-      <input
-        formControlName="author"
-        [maxlength]="authorMax"
-        autocomplete="nickname"
-        placeholder="Captain"
-      />
-    </label>
-    @if (form.controls.author.touched && form.controls.author.invalid) {
-      <p class="field-error">Author is required (max {{ authorMax }} characters).</p>
-    }
+@if (auth.enabled && !auth.signedIn()) {
+  <section class="card sign-in-prompt">
+    <h2>Write in the log</h2>
+    <p class="muted">Anyone can read the log. Sign in to add entries.</p>
+    <button type="button" (click)="auth.signIn()">Sign in</button>
+  </section>
+} @else {
+  <section class="card">
+    <h2>New entry</h2>
+    <form [formGroup]="form" (ngSubmit)="submit()">
+      @if (!auth.enabled) {
+        <label>
+          Author
+          <input
+            formControlName="author"
+            [maxlength]="authorMax"
+            autocomplete="nickname"
+            placeholder="Captain"
+          />
+        </label>
+        @if (form.controls.author.touched && form.controls.author.invalid) {
+          <p class="field-error">Author is required (max {{ authorMax }} characters).</p>
+        }
+      } @else {
+        <p class="muted">
+          Writing as <strong>{{ auth.userName() }}</strong>
+        </p>
+      }
 
-    <label>
-      Message
-      <textarea
-        formControlName="message"
-        [maxlength]="messageMax"
-        rows="3"
-        placeholder="What happened on deck?"
-      ></textarea>
-    </label>
-    <p class="hint">{{ form.controls.message.value.length }} / {{ messageMax }}</p>
-    @if (form.controls.message.touched && form.controls.message.invalid) {
-      <p class="field-error">Message is required (max {{ messageMax }} characters).</p>
-    }
+      <label>
+        Message
+        <textarea
+          formControlName="message"
+          [maxlength]="messageMax"
+          rows="3"
+          placeholder="What happened on deck?"
+        ></textarea>
+      </label>
+      <p class="hint">{{ form.controls.message.value.length }} / {{ messageMax }}</p>
+      @if (form.controls.message.touched && form.controls.message.invalid) {
+        <p class="field-error">Message is required (max {{ messageMax }} characters).</p>
+      }
 
-    <button type="submit" [disabled]="saving()">{{ saving() ? 'Saving…' : 'Add to log' }}</button>
-  </form>
-</section>
+      <button type="submit" [disabled]="saving()">{{ saving() ? 'Saving…' : 'Add to log' }}</button>
+    </form>
+  </section>
+}
 
 @if (error()) {
   <p class="banner-error" role="alert">{{ error() }}</p>
@@ -60,14 +74,16 @@
             <span class="chip">node {{ entry.node }}</span>
             <span class="chip">pod {{ entry.pod }}</span>
           </p>
-          <button
-            type="button"
-            class="link"
-            (click)="remove(entry)"
-            [attr.aria-label]="'Delete entry by ' + entry.author"
-          >
-            Delete
-          </button>
+          @if (entry.canDelete) {
+            <button
+              type="button"
+              class="link"
+              (click)="remove(entry)"
+              [attr.aria-label]="'Delete entry by ' + entry.author"
+            >
+              Delete
+            </button>
+          }
         </li>
       } @empty {
         <li class="muted">The log is empty. Write the first entry.</li>

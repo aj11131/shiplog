@@ -4,6 +4,8 @@
 #                  Observability history is kept. Re-create with the Terraform Apply workflow.
 #   observability  the Log Analytics workspace, App Insights and DCR (all telemetry history).
 #                  Destroy aks-dev first.
+#   identity-dev   the Entra app registrations. Sign-in stops working, and recreating them
+#                  produces NEW client IDs (redeploy afterwards).
 #
 # Bootstrap (state storage + CI identities) is never destroyed by CI; see docs/03-aks-terraform.md.
 name: Terraform Destroy
@@ -14,7 +16,7 @@ on:
       stack:
         description: Stack to destroy
         type: choice
-        options: [aks-dev, observability]
+        options: [aks-dev, observability, identity-dev]
         default: aks-dev
       confirm:
         description: Type the stack name again to confirm
@@ -59,6 +61,7 @@ jobs:
           case "${{ inputs.stack }}" in
             aks-dev)       echo "dir=infra/azure/aks"           >> "$GITHUB_OUTPUT"; echo "key=aks-dev.tfstate"       >> "$GITHUB_OUTPUT"; echo "vars=-var-file=env/dev.tfvars" >> "$GITHUB_OUTPUT" ;;
             observability) echo "dir=infra/azure/observability" >> "$GITHUB_OUTPUT"; echo "key=observability.tfstate" >> "$GITHUB_OUTPUT"; echo "vars="                         >> "$GITHUB_OUTPUT" ;;
+            identity-dev)  echo "dir=infra/azure/identity"      >> "$GITHUB_OUTPUT"; echo "key=identity-dev.tfstate"  >> "$GITHUB_OUTPUT"; echo "vars=-var-file=env/dev.tfvars" >> "$GITHUB_OUTPUT" ;;
           esac
 
       - name: terraform init

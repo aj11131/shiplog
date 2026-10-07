@@ -64,6 +64,23 @@ jobs:
           terraform plan -lock-timeout=5m -no-color -out=tfplan
           terraform apply -lock-timeout=5m -no-color tfplan
 
+      # Entra ID app registrations (Microsoft Graph via the azuread provider; same OIDC sign-in).
+      - name: identity-dev · init
+        working-directory: infra/azure/identity
+        run: >
+          terraform init
+          -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}"
+          -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}"
+          -backend-config="container_name=tfstate"
+          -backend-config="key=identity-dev.tfstate"
+          -backend-config="use_azuread_auth=true"
+
+      - name: identity-dev · plan & apply
+        working-directory: infra/azure/identity
+        run: |
+          terraform plan -lock-timeout=5m -no-color -var-file=env/dev.tfvars -out=tfplan
+          terraform apply -lock-timeout=5m -no-color tfplan
+
       - name: aks-dev · init
         working-directory: infra/azure/aks
         run: >

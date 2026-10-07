@@ -33,6 +33,10 @@ namespace Shiplog.Api.Migrations.Postgres
                         .HasMaxLength(60)
                         .HasColumnType("character varying(60)");
 
+                    b.Property<string>("AuthorId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<string>("Cloud")
                         .IsRequired()
                         .HasMaxLength(20)

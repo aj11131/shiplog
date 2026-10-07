@@ -52,7 +52,7 @@ jobs:
 
       - name: terraform validate
         run: |
-          for dir in infra/bootstrap infra/azure/observability infra/azure/aks; do
+          for dir in infra/bootstrap infra/azure/observability infra/azure/identity infra/azure/aks; do
             echo "::group::$dir"
             terraform -chdir=$dir init -backend=false
             terraform -chdir=$dir validate
@@ -64,7 +64,7 @@ jobs:
       - name: tflint
         run: |
           tflint --init --config "$GITHUB_WORKSPACE/infra/.tflint.hcl"
-          for dir in infra/bootstrap infra/azure/observability infra/azure/aks infra/modules/github-oidc-identity; do
+          for dir in infra/bootstrap infra/azure/observability infra/azure/identity infra/azure/aks infra/modules/github-oidc-identity; do
             echo "::group::$dir"
             tflint --chdir=$dir --config "$GITHUB_WORKSPACE/infra/.tflint.hcl"
             echo "::endgroup::"
@@ -98,6 +98,10 @@ jobs:
             dir: infra/azure/observability
             key: observability.tfstate
             var_file: ""
+          - stack: identity-dev
+            dir: infra/azure/identity
+            key: identity-dev.tfstate
+            var_file: env/dev.tfvars
           - stack: aks-dev
             dir: infra/azure/aks
             key: aks-dev.tfstate

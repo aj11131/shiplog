@@ -1,0 +1,6 @@
+apiVersion: v2
+name: shiplog-gateway
+description: Shared HTTPS entry point (Gateway API) with Let's Encrypt certificates via cert-manager.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

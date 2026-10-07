@@ -32,7 +32,20 @@ header {
 
 nav {
   display: flex;
+  align-items: center;
   gap: 1rem;
+
+  .user {
+    color: #cfe0f5;
+    font-size: 0.9rem;
+  }
+
+  .header-button {
+    padding: 0.25rem 0.75rem;
+    background: transparent;
+    border-color: var(--brass);
+    color: #fff;
+  }
 
   a {
     color: #cfe0f5;

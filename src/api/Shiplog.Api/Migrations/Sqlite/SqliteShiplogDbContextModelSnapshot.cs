@@ -28,6 +28,10 @@ namespace Shiplog.Api.Migrations.Sqlite
                         .HasMaxLength(60)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("AuthorId")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Cloud")
                         .IsRequired()
                         .HasMaxLength(20)

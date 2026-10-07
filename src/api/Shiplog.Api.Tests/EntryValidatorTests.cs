@@ -44,6 +44,14 @@ public class EntryValidatorTests
     }
 
     [Fact]
+    public void Author_is_not_required_when_it_comes_from_the_token()
+    {
+        var errors = EntryValidator.Validate(new CreateEntryRequest(null, "Land ho!"), authorFromToken: true);
+
+        Assert.Empty(errors);
+    }
+
+    [Fact]
     public void Length_limits_apply_after_trimming()
     {
         var errors = EntryValidator.Validate(new CreateEntryRequest($"  {new string('a', 60)}  ", $" {new string('m', 280)} "));

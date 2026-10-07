@@ -1,3 +1,4 @@
+using Shiplog.Api.Auth;
 using Shiplog.Api.Data;
 using Shiplog.Api.Diagnostics;
 using Shiplog.Api.Entries;
@@ -10,6 +11,7 @@ builder.Services.AddSingleton(runtime);
 builder.Services.AddSingleton(TimeProvider.System);
 
 builder.Services.AddShiplogDatabase(builder.Configuration);
+builder.Services.AddShiplogAuth(builder.Configuration);
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<ShiplogDbContext>("database", tags: [DiagnosticsEndpoints.ReadyTag]);
 builder.Services.AddProblemDetails();
@@ -35,6 +37,8 @@ if (app.Services.GetRequiredService<DatabaseOptions>().MigrateOnStartup)
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 app.UseServedByHeader();
+app.UseAuthentication();
+app.UseAuthorization();
 
 if (app.Environment.IsDevelopment())
 {
@@ -43,6 +47,7 @@ if (app.Environment.IsDevelopment())
 
 app.MapEntryEndpoints();
 app.MapDiagnosticsEndpoints();
+app.MapMeEndpoints();
 
 app.Logger.LogInformation(
     "Shiplog API {Version} starting on {Cloud}/{Cluster}/{Pod}", runtime.Version, runtime.Cloud, runtime.Cluster, runtime.Pod);

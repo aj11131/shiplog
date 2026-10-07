@@ -11,6 +11,7 @@ on:
       - "src/**"
       - "charts/**"
       - "deploy/otel-collector/**"
+      - "deploy/cert-manager/**"
       - ".github/workflows/deploy-aks.yml"
   workflow_run:
     workflows: ["Terraform Apply"]
@@ -30,6 +31,7 @@ env:
   TF_VERSION: 1.16.5
   HELM_VERSION: v4.3.0
   OTEL_CHART_VERSION: 0.175.1
+  CERT_MANAGER_VERSION: v1.21.2
   ARM_USE_OIDC: "true"
   ARM_CLIENT_ID: ${{ vars.AZURE_APPLY_CLIENT_ID }}
   ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
@@ -100,12 +102,27 @@ jobs:
           fi
           # Mask the App Insights connection string so it never appears in logs.
           echo "::add-mask::$(out app_insights_connection_string)"
+
+          # Entra ID app registrations (step 4).
+          terraform -chdir=../identity init -input=false \
+            -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=identity-dev.tfstate" \
+            -backend-config="use_azuread_auth=true" >/dev/null
+          terraform -chdir=../identity output -json > "$RUNNER_TEMP/identity.json"
+          host=$(jq -r ".app_hostname.value" "$RUNNER_TEMP/identity.json")
+          if [ "$host" = "null" ]; then
+            echo "::error::No identity outputs. Run the Terraform Apply workflow first."; exit 1
+          fi
           {
             echo "cluster=$(out cluster_name)"
             echo "rg=$(out resource_group_name)"
             echo "location=$(out location)"
             echo "acr=$(out acr_name)"
             echo "registry=$(out acr_login_server)"
+            echo "host=$host"
+            echo "dns_label=${host%%.*}"
           } >> "$GITHUB_OUTPUT"
 
       # ---- 2. Build & push images ---------------------------------------------
@@ -182,19 +199,26 @@ jobs:
             -f deploy/otel-collector/values-azure.yaml -f "$RUNNER_TEMP/otel-values.json" \
             --wait --timeout 5m
 
-      # ---- 5. Shiplog ---------------------------------------------------------
+      # ---- 5. cert-manager ----------------------------------------------------
+      - name: Deploy cert-manager
+        run: |
+          helm repo add jetstack https://charts.jetstack.io --force-update
+          helm upgrade --install cert-manager jetstack/cert-manager \
+            --version "$CERT_MANAGER_VERSION" --namespace cert-manager --create-namespace \
+            -f deploy/cert-manager/values.yaml --wait --timeout 5m
+
+      # ---- 6. Shiplog ---------------------------------------------------------
+      # Deployed BEFORE the Gateway: switching the web Service from LoadBalancer to ClusterIP
+      # releases the public IP holding the DNS label, which the Gateway then claims.
       - name: Deploy Shiplog
         env:
-          WEB_ALLOWED_CIDRS: ${{ vars.WEB_ALLOWED_CIDRS }}
+          HOST: ${{ steps.tf.outputs.host }}
         run: |
           out() { jq -r ".$1.value" "$RUNNER_TEMP/tf.json"; }
+          id() { jq -r ".$1.value" "$RUNNER_TEMP/identity.json"; }
           kubectl create namespace shiplog --dry-run=client -o yaml | kubectl apply -f -
           kubectl label namespace shiplog --overwrite \
             pod-security.kubernetes.io/enforce=restricted pod-security.kubernetes.io/warn=restricted
-
-          if [ -z "$WEB_ALLOWED_CIDRS" ]; then
-            echo "::warning::WEB_ALLOWED_CIDRS is not set, so the app is reachable from the whole internet."
-          fi
 
           jq -n \
             --arg registry "$(out acr_login_server)" \
@@ -202,14 +226,17 @@ jobs:
             --arg cluster "$(out cluster_name)" \
             --arg region "$(out location)" \
             --arg ai "$(out app_insights_connection_string)" \
-            --arg cidrs "$WEB_ALLOWED_CIDRS" \
+            --arg host "$HOST" \
+            --arg tenant "$(id tenant_id)" \
+            --arg api "$(id api_client_id)" \
+            --arg web "$(id web_client_id)" \
+            --arg scope "$(id api_scope)" \
             '{
               image: { registry: $registry, tag: $tag },
               environment: { cluster: $cluster, region: $region },
-              web: {
-                appInsightsConnectionString: $ai,
-                service: { loadBalancerSourceRanges: ($cidrs | split(",") | map(gsub(" "; "")) | map(select(length > 0))) }
-              }
+              web: { appInsightsConnectionString: $ai },
+              gateway: { hostname: $host },
+              auth: { tenantId: $tenant, apiClientId: $api, webClientId: $web, apiScope: $scope }
             }' > "$RUNNER_TEMP/shiplog-values.json"
 
           helm upgrade --install shiplog charts/shiplog --namespace shiplog \
@@ -219,23 +246,67 @@ jobs:
       - name: helm test
         run: helm test shiplog --namespace shiplog --logs
 
+      # ---- 7. HTTPS Gateway ---------------------------------------------------
+      - name: Deploy Gateway + certificate
+        env:
+          HOST: ${{ steps.tf.outputs.host }}
+          DNS_LABEL: ${{ steps.tf.outputs.dns_label }}
+        run: |
+          # Baseline (not restricted): the Gateway's Envoy proxy pods are generated by AKS's Istio.
+          kubectl create namespace ingress --dry-run=client -o yaml | kubectl apply -f -
+          kubectl label namespace ingress --overwrite pod-security.kubernetes.io/enforce=baseline
+
+          helm upgrade --install shiplog-gateway charts/gateway --namespace ingress \
+            --set hostname="$HOST" --set azureDnsLabel="$DNS_LABEL"
+
+          kubectl wait --for=condition=Programmed gateway/shiplog -n ingress --timeout=5m
+          # Let's Encrypt validates over HTTP-01, a minute or two after the IP gets its DNS name.
+          kubectl wait --for=condition=Ready certificate/shiplog-tls -n ingress --timeout=10m
+
+      - name: Smoke test over HTTPS
+        env:
+          HOST: ${{ steps.tf.outputs.host }}
+        run: |
+          url="https://$HOST"
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 5 "$url/healthz" >/dev/null; then break; fi
+            echo "waiting for $url ($i)"; sleep 10
+          done
+          curl -fsS "$url/healthz"; echo
+          curl -fsS "$url/api/diagnostics"; echo
+          echo "--- anonymous write must be rejected with 401"
+          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$url/api/entries" -H "Content-Type: application/json" -d '{"message":"hi"}')
+          [ "$code" = "401" ] || { echo "::error::expected 401, got $code"; exit 1; }
+          echo "--- plain HTTP redirects to HTTPS"
+          curl -s -o /dev/null -w "%{http_code} -> %{redirect_url}\n" "http://$HOST/"
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          kubectl get gateway,httproute,certificate,certificaterequest,order,challenge -A || true
+          kubectl describe gateway shiplog -n ingress | tail -30 || true
+          kubectl describe challenge -n ingress | tail -30 || true
+          kubectl get svc -A | grep -i loadbalancer || true
+
       - name: Summary
         if: always()
+        env:
+          HOST: ${{ steps.tf.outputs.host }}
         run: |
-          label=$(kubectl get svc shiplog-web -n shiplog -o jsonpath='{.metadata.annotations.service\.beta\.kubernetes\.io/azure-dns-label-name}' 2>/dev/null)
-          ip=$(kubectl get svc shiplog-web -n shiplog -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
+          ip=$(kubectl get gateway shiplog -n ingress -o jsonpath='{.status.addresses[0].value}' 2>/dev/null)
+          fence='```'
           {
             echo "### Deploy to AKS · dev"
             echo
             echo "| | |"
             echo "|---|---|"
-            echo "| App | http://${label}.${{ steps.tf.outputs.location }}.cloudapp.azure.com |"
-            echo "| Public IP | \`${ip:-pending}\` |"
-            echo "| Image tag | \`${IMAGE_TAG}\` |"
+            echo "| App | https://$HOST |"
+            echo "| Gateway IP | ${ip:-pending} |"
+            echo "| Image tag | ${IMAGE_TAG} |"
             echo
-            echo '```'
+            echo "$fence"
+            kubectl get gateway,httproute,certificate -A 2>/dev/null
+            echo
             kubectl get pods -n shiplog -o wide 2>/dev/null
-            echo
-            kubectl get pods -n observability -o wide 2>/dev/null
-            echo '```'
+            echo "$fence"
           } >> "$GITHUB_STEP_SUMMARY"

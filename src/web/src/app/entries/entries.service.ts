@@ -13,10 +13,13 @@ export interface LogEntry {
   cluster: string;
   node: string;
   pod: string;
+  /** Computed by the API for the caller: author or Shiplog.Admin (always true with auth disabled). */
+  canDelete: boolean;
 }
 
 export interface CreateEntryRequest {
-  author: string;
+  /** Only used with auth disabled; otherwise the API takes the author from the token. */
+  author?: string;
   message: string;
 }
 

@@ -1,3 +1,4 @@
+import { computed, signal } from '@angular/core';
 import { LogEntry } from '../entries/entries.service';
 
 export const sampleEntry: LogEntry = {
@@ -10,4 +11,20 @@ export const sampleEntry: LogEntry = {
   cluster: 'shiplog-dev',
   node: 'aks-system-0',
   pod: 'shiplog-api-abc',
+  canDelete: true,
 };
+
+/** An AuthService stand-in for component tests. */
+export function fakeAuth(options: { enabled: boolean; signedInAs?: string | null }) {
+  const name = signal<string | null>(options.signedInAs ?? null);
+  return {
+    enabled: options.enabled,
+    signedIn: computed(() => name() !== null),
+    userName: name,
+    error: signal<string | null>(null),
+    signIn: vi.fn().mockResolvedValue(undefined),
+    signOut: vi.fn().mockResolvedValue(undefined),
+    getAccessToken: vi.fn().mockResolvedValue(options.signedInAs ? 'test-token' : null),
+    signInAs: (who: string | null) => name.set(who),
+  };
+}

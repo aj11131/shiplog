@@ -1,5 +1,10 @@
 {
   "apiBaseUrl": "",
   "appInsightsConnectionString": "",
-  "environment": "local"
+  "environment": "local",
+  "auth": {
+    "clientId": "",
+    "tenantId": "",
+    "apiScope": ""
+  }
 }

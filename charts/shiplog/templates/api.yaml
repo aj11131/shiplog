@@ -184,6 +184,14 @@ spec:
 {{- define "shiplog.api.env" -}}
 - name: ASPNETCORE_ENVIRONMENT
   value: Production
+- name: Auth__Enabled
+  value: {{ .Values.auth.enabled | quote }}
+{{- if .Values.auth.enabled }}
+- name: Auth__TenantId
+  value: {{ required "auth.tenantId is required when auth.enabled" .Values.auth.tenantId | quote }}
+- name: Auth__Audience
+  value: {{ required "auth.apiClientId is required when auth.enabled" .Values.auth.apiClientId | quote }}
+{{- end }}
 - name: Database__Provider
   value: Postgres
 - name: DB_PASSWORD

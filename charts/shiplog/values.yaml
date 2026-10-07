@@ -85,6 +85,25 @@ database:
     passwordKey: password
     sslMode: Require
 
+# Entra ID sign-in. Disabled = anyone may write and the author is typed in (local dev, kind, CI).
+# Enabled = reads stay anonymous; writing needs a signed-in user with the Entries.ReadWrite
+# scope; deleting needs to be the entry's author or hold the Shiplog.Admin app role.
+# Values come from the infra/azure/identity Terraform outputs.
+auth:
+  enabled: false
+  tenantId: ""
+  apiClientId: "" # the API validates that tokens are issued for this audience
+  webClientId: "" # the SPA signs users in with this
+  apiScope: "" # e.g. api://<api client id>/Entries.ReadWrite
+
+# Expose the web app through a shared Gateway API Gateway (charts/gateway) instead of a
+# LoadBalancer Service. The HTTPRoute lives here; the Gateway (TLS, public IP) is platform-owned.
+gateway:
+  enabled: false
+  name: shiplog
+  namespace: ingress
+  hostname: ""
+
 telemetry:
   # OTLP/gRPC endpoint for traces, metrics and logs. Empty = export disabled.
   # Step 3 points this at the OpenTelemetry Collector.

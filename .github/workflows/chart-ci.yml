@@ -51,18 +51,23 @@ jobs:
             | tar -xz -C /usr/local/bin kubeconform
 
       - name: helm lint
-        run: helm lint charts/shiplog --strict -f charts/shiplog/values-kind.yaml
+        run: |
+          helm lint charts/shiplog --strict -f charts/shiplog/values-kind.yaml
+          helm lint charts/gateway --strict --set hostname=shiplog.example.com
 
       # Render every supported configuration and check the YAML is valid Kubernetes.
       - name: Render & validate
         run: |
           set -euo pipefail
           render() { helm template shiplog charts/shiplog --namespace shiplog "$@"; }
-          validate() { kubeconform -strict -summary -output text; }
+          # CRD schemas (Gateway API, cert-manager) come from the community CRDs catalog.
+          validate() { kubeconform -strict -summary -output text             -schema-location default             -schema-location "https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"; }
+          aks_ids="--set gateway.hostname=shiplog.example.com --set auth.tenantId=t --set auth.apiClientId=a --set auth.webClientId=w --set auth.apiScope=s"
 
           echo "--- defaults";           render | validate
           echo "--- kind";               render -f charts/shiplog/values-kind.yaml | validate
-          echo "--- aks";                render -f charts/shiplog/values-aks.yaml --set image.registry=example.azurecr.io --set image.tag=abc123 | validate
+          echo "--- aks";                render -f charts/shiplog/values-aks.yaml --set image.registry=example.azurecr.io --set image.tag=abc123 $aks_ids | validate
+          echo "--- gateway chart";      helm template gw charts/gateway --namespace ingress --set hostname=shiplog.example.com --set azureDnsLabel=shiplog | validate
           echo "--- external database";  render --set postgres.enabled=false \
                                                   --set database.external.host=db.example.com \
                                                   --set-string database.external.existingSecret=yes | validate  # "yes" must stay a string

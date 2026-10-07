@@ -17,6 +17,18 @@ export interface Diagnostics {
   serverTimeUtc: string;
 }
 
+/** What the API sees in the caller's token (GET /api/me). */
+export interface Me {
+  authEnabled: boolean;
+  isAuthenticated: boolean;
+  name: string | null;
+  objectId: string | null;
+  roles: string[];
+  scopes: string[];
+  isAdmin: boolean;
+  canWrite: boolean;
+}
+
 @Component({
   selector: 'app-diagnostics-page',
   imports: [DatePipe],
@@ -32,6 +44,7 @@ export class DiagnosticsPage implements OnInit {
   protected readonly environment = this.config.environment;
 
   protected readonly diagnostics = signal<Diagnostics | null>(null);
+  protected readonly me = signal<Me | null>(null);
   protected readonly error = signal<string | null>(null);
 
   ngOnInit(): void {
@@ -45,6 +58,10 @@ export class DiagnosticsPage implements OnInit {
         this.error.set(null);
       },
       error: () => this.error.set('Could not reach the API.'),
+    });
+    this.http.get<Me>(`${this.config.apiBaseUrl}/api/me`).subscribe({
+      next: (me) => this.me.set(me),
+      error: () => this.me.set(null),
     });
   }
 

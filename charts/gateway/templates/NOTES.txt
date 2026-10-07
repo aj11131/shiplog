@@ -1,0 +1,6 @@
+Gateway "{{ .Values.name }}" in namespace "{{ .Release.Namespace }}" for https://{{ .Values.hostname }}
+
+Check it:
+  kubectl get gateway {{ .Values.name }} -n {{ .Release.Namespace }}                 # PROGRAMMED should be True
+  kubectl get certificate -n {{ .Release.Namespace }}                     # READY should be True (about a minute)
+  kubectl describe certificaterequest,order,challenge -n {{ .Release.Namespace }}   # if it isn't

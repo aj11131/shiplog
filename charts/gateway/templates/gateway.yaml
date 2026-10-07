@@ -1,0 +1,88 @@
+{{- $host := required "hostname is required" .Values.hostname -}}
+{{- $issuer := printf "%s-letsencrypt" .Values.name -}}
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ .Values.name }}
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    # cert-manager's "gateway shim" sees this annotation and creates a Certificate for every
+    # HTTPS listener: dnsNames = the listener hostname, secret = the listener's certificateRef.
+    cert-manager.io/issuer: {{ $issuer }}
+spec:
+  gatewayClassName: {{ .Values.gatewayClassName }}
+  {{- with .Values.azureDnsLabel }}
+  # Copied onto the generated LoadBalancer Service, so the public IP gets a DNS name.
+  infrastructure:
+    annotations:
+      service.beta.kubernetes.io/azure-dns-label-name: {{ . | quote }}
+  {{- end }}
+  listeners:
+    # Port 80: only the redirect and cert-manager's ACME challenge routes (same namespace).
+    - name: http
+      port: 80
+      protocol: HTTP
+      hostname: {{ $host | quote }}
+      allowedRoutes:
+        namespaces:
+          from: Same
+    # Port 443: TLS terminates here; app namespaces attach their HTTPRoutes.
+    - name: https
+      port: 443
+      protocol: HTTPS
+      hostname: {{ $host | quote }}
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: {{ .Values.name }}-tls # created and renewed by cert-manager
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values:
+                  {{- toYaml .Values.appNamespaces | nindent 18 }}
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ $issuer }}
+spec:
+  acme:
+    server: {{ .Values.tls.acme.server }}
+    {{- with .Values.tls.acme.email }}
+    email: {{ . | quote }}
+    {{- end }}
+    privateKeySecretRef:
+      name: {{ $issuer }}-account-key
+    solvers:
+      - http01:
+          gatewayHTTPRoute:
+            parentRefs:
+              - name: {{ .Values.name }}
+                kind: Gateway
+                sectionName: http
+{{- if .Values.redirectHttpToHttps }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Values.name }}-https-redirect
+spec:
+  parentRefs:
+    - name: {{ .Values.name }}
+      sectionName: http
+  hostnames:
+    - {{ $host | quote }}
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301
+{{- end }}

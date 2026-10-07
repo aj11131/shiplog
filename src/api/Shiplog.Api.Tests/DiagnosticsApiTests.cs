@@ -33,6 +33,16 @@ public class DiagnosticsApiTests(ShiplogApiFactory factory) : IClassFixture<Ship
     }
 
     [Fact]
+    public async Task Me_reports_auth_disabled_and_full_access()
+    {
+        var me = await _client.GetFromJsonAsync<Shiplog.Api.Auth.MeResponse>("/api/me");
+
+        Assert.NotNull(me);
+        Assert.False(me.AuthEnabled);
+        Assert.True(me.CanWrite);
+    }
+
+    [Fact]
     public async Task Every_response_says_which_pod_served_it()
     {
         var response = await _client.GetAsync("/api/entries");

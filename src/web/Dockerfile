@@ -23,6 +23,9 @@ COPY --from=build /src/dist/web/browser /usr/share/nginx/html
 ENV API_UPSTREAM=http://api:8080 \
     API_BASE_URL="" \
     APPINSIGHTS_CONNECTION_STRING="" \
-    SHIPLOG_ENVIRONMENT=local
+    SHIPLOG_ENVIRONMENT=local \
+    AUTH_CLIENT_ID="" \
+    AUTH_TENANT_ID="" \
+    AUTH_API_SCOPE=""
 
 EXPOSE 8080

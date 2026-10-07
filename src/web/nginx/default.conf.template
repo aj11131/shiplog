@@ -1,6 +1,14 @@
 # Rendered at container start by the nginx image's envsubst step.
 # ${UPPER_CASE} values come from environment variables; $lower_case are nginx variables.
 
+# HSTS ("only ever use HTTPS for this site") only makes sense when the browser actually
+# arrived over HTTPS. TLS ends at the Gateway, which sets X-Forwarded-Proto. Short max-age:
+# this is a test domain, and HSTS can't be undone for the browser until it expires.
+map $http_x_forwarded_proto $hsts {
+    https   "max-age=86400";
+    default "";
+}
+
 server {
     listen 8080;
     server_name _;
@@ -15,7 +23,15 @@ server {
         include /etc/nginx/snippets/security-headers.conf;
         add_header Cache-Control "no-store" always;
         default_type application/json;
-        return 200 '{"apiBaseUrl":"${API_BASE_URL}","appInsightsConnectionString":"${APPINSIGHTS_CONNECTION_STRING}","environment":"${SHIPLOG_ENVIRONMENT}"}';
+        return 200 '{"apiBaseUrl":"${API_BASE_URL}","appInsightsConnectionString":"${APPINSIGHTS_CONNECTION_STRING}","environment":"${SHIPLOG_ENVIRONMENT}","auth":{"clientId":"${AUTH_CLIENT_ID}","tenantId":"${AUTH_TENANT_ID}","apiScope":"${AUTH_API_SCOPE}"}}';
+    }
+
+    # MSAL redirect bridge (see src/main.ts). Its URL carries a one-time authorization code,
+    # so it must never be cached by the browser or a proxy.
+    location = /auth/redirect {
+        include /etc/nginx/snippets/security-headers.conf;
+        add_header Cache-Control "no-store" always;
+        try_files /index.html =404;
     }
 
     # Same-origin API: the browser calls /api/... on this host and nginx forwards it,

@@ -1,6 +1,7 @@
 # Azure Kubernetes Service (infra/azure/aks). Deployed by .github/workflows/deploy-aks.yml,
 # which also sets: image.registry, image.tag, environment.cluster, environment.region,
-# web.appInsightsConnectionString and web.service.loadBalancerSourceRanges.
+# web.appInsightsConnectionString, gateway.hostname and the auth.* IDs (from the
+# infra/azure/identity outputs).
 environment:
   name: aks-dev
   cloud: aks
@@ -16,13 +17,14 @@ api:
 
 web:
   service:
-    # An Azure Standard Load Balancer with a public IP, created by AKS's cloud controller.
-    type: LoadBalancer
-    annotations:
-      # Gives the public IP a DNS name: <label>.<region>.cloudapp.azure.com
-      service.beta.kubernetes.io/azure-dns-label-name: shiplog-dev-aj11131
-      # Health-probe the nginx /healthz endpoint instead of a plain TCP check.
-      service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: /healthz
+    # Internal only: public traffic arrives through the shared HTTPS Gateway (charts/gateway).
+    type: ClusterIP
+
+gateway:
+  enabled: true # HTTPRoute -> Gateway "shiplog" in namespace "ingress"
+
+auth:
+  enabled: true
 
 postgres:
   persistence:

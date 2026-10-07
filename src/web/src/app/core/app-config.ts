@@ -15,6 +15,16 @@ export interface AppConfig {
   appInsightsConnectionString: string;
   /** Display label, e.g. "local", "aks-dev". */
   environment: string;
+  /** Entra ID sign-in. null = auth disabled (local dev, kind): anyone can write. */
+  auth: AuthConfig | null;
+}
+
+export interface AuthConfig {
+  /** The SPA's app registration (client) ID. */
+  clientId: string;
+  tenantId: string;
+  /** The API permission to request, e.g. api://<api client id>/Entries.ReadWrite */
+  apiScope: string;
 }
 
 export const APP_CONFIG = new InjectionToken<AppConfig>('APP_CONFIG');
@@ -23,6 +33,7 @@ export const defaultConfig: AppConfig = {
   apiBaseUrl: '',
   appInsightsConnectionString: '',
   environment: 'local',
+  auth: null,
 };
 
 /** Fetches /config.json, falling back to defaults so the app still starts if it is missing. */
@@ -32,7 +43,11 @@ export async function loadConfig(fetchFn: typeof fetch = fetch): Promise<AppConf
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
-    return { ...defaultConfig, ...((await response.json()) as Partial<AppConfig>) };
+    const loaded = { ...defaultConfig, ...((await response.json()) as Partial<AppConfig>) };
+    // nginx always renders an "auth" object; empty IDs mean "disabled".
+    const auth =
+      loaded.auth?.clientId && loaded.auth.tenantId && loaded.auth.apiScope ? loaded.auth : null;
+    return { ...loaded, auth };
   } catch (error) {
     console.warn('Could not load /config.json; using defaults.', error);
     return defaultConfig;

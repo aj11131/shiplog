@@ -18,6 +18,7 @@ public abstract class ShiplogDbContext(DbContextOptions options) : DbContext(opt
         {
             entry.HasKey(e => e.Id);
             entry.Property(e => e.Author).HasMaxLength(LogEntry.AuthorMaxLength);
+            entry.Property(e => e.AuthorId).HasMaxLength(LogEntry.AuthorIdMaxLength);
             entry.Property(e => e.Message).HasMaxLength(LogEntry.MessageMaxLength);
             entry.Property(e => e.Cloud).HasMaxLength(20);
             entry.Property(e => e.Region).HasMaxLength(40);

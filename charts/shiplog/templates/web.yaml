@@ -76,6 +76,13 @@ spec:
               value: {{ .Values.environment.name | quote }}
             - name: APPINSIGHTS_CONNECTION_STRING
               value: {{ .Values.web.appInsightsConnectionString | quote }}
+            # Empty = sign-in disabled in the browser.
+            - name: AUTH_CLIENT_ID
+              value: {{ ternary .Values.auth.webClientId "" .Values.auth.enabled | quote }}
+            - name: AUTH_TENANT_ID
+              value: {{ ternary .Values.auth.tenantId "" .Values.auth.enabled | quote }}
+            - name: AUTH_API_SCOPE
+              value: {{ ternary .Values.auth.apiScope "" .Values.auth.enabled | quote }}
           livenessProbe:
             httpGet:
               path: /healthz

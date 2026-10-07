@@ -7,10 +7,21 @@
   <nav>
     <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Log</a>
     <a routerLink="/diagnostics" routerLinkActive="active">Diagnostics</a>
+    @if (auth.enabled) {
+      @if (auth.signedIn()) {
+        <span class="user" data-testid="user-name">{{ auth.userName() }}</span>
+        <button type="button" class="header-button" (click)="auth.signOut()">Sign out</button>
+      } @else {
+        <button type="button" class="header-button" (click)="auth.signIn()">Sign in</button>
+      }
+    }
   </nav>
 </header>
 
 <main>
+  @if (auth.error()) {
+    <p class="banner-error" role="alert">{{ auth.error() }}</p>
+  }
   <router-outlet />
 </main>
 

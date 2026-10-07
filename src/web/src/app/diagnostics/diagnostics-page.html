@@ -71,6 +71,30 @@
   </table>
 </section>
 
+@if (me(); as m) {
+  <section class="card">
+    <h2>You, as the API sees you</h2>
+    @if (!m.authEnabled) {
+      <p class="muted">Sign-in is disabled in this environment: everyone may write and delete.</p>
+    } @else if (!m.isAuthenticated) {
+      <p class="muted">Not signed in. You can read the log; sign in to write.</p>
+    } @else {
+      <dl>
+        <dt>Name</dt>
+        <dd>{{ m.name }}</dd>
+        <dt>Object ID (oid)</dt>
+        <dd>{{ m.objectId }}</dd>
+        <dt>Scopes (scp)</dt>
+        <dd>{{ m.scopes.join(', ') || 'none' }}</dd>
+        <dt>App roles</dt>
+        <dd>{{ m.roles.join(', ') || 'none' }}</dd>
+        <dt>Can delete</dt>
+        <dd>{{ m.isAdmin ? 'any entry (Shiplog.Admin)' : 'your own entries' }}</dd>
+      </dl>
+    }
+  </section>
+}
+
 <section class="card">
   <h2>Browser</h2>
   <dl>

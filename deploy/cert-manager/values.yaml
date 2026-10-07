@@ -1,0 +1,26 @@
+# cert-manager (jetstack/cert-manager): obtains and renews TLS certificates.
+# The Gateway in charts/gateway asks for one through its cert-manager.io/issuer annotation.
+crds:
+  enabled: true # install the Certificate/Issuer/... CRDs with the chart
+  keep: true # and don't delete them (and every certificate!) on helm uninstall
+
+config:
+  # Watch Gateway API resources: create Certificates for annotated Gateways, and answer
+  # ACME HTTP-01 challenges with temporary HTTPRoutes.
+  gatewayAPI:
+    enabled: true
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 64Mi
+webhook:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+cainjector:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi

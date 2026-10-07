@@ -2,7 +2,10 @@ using Shiplog.Api.Data;
 
 namespace Shiplog.Api.Entries;
 
-// Author comes from the request body for now. Step 4 (Entra ID sign-in) will take it from the user's token instead.
+/// <summary>
+/// With auth enabled, Author is ignored: the name comes from the signed-in user's token, so
+/// nobody can post as someone else. With auth disabled (local dev), the caller supplies it.
+/// </summary>
 public record CreateEntryRequest(string? Author, string? Message);
 
 public record EntryResponse(
@@ -14,24 +17,29 @@ public record EntryResponse(
     string Region,
     string Cluster,
     string Node,
-    string Pod)
+    string Pod,
+    bool CanDelete)
 {
-    public static EntryResponse From(LogEntry e) =>
-        new(e.Id, e.Author, e.Message, e.CreatedAtUtc, e.Cloud, e.Region, e.Cluster, e.Node, e.Pod);
+    public static EntryResponse From(LogEntry e, bool canDelete) =>
+        new(e.Id, e.Author, e.Message, e.CreatedAtUtc, e.Cloud, e.Region, e.Cluster, e.Node, e.Pod, canDelete);
 }
 
 public static class EntryValidator
 {
     /// <summary>Returns validation errors keyed by field name; empty when the request is valid.</summary>
-    public static Dictionary<string, string[]> Validate(CreateEntryRequest request)
+    /// <param name="authorFromToken">True when the author comes from the token, so the body's Author isn't checked.</param>
+    public static Dictionary<string, string[]> Validate(CreateEntryRequest request, bool authorFromToken = false)
     {
         var errors = new Dictionary<string, string[]>();
 
-        var author = request.Author?.Trim();
-        if (string.IsNullOrEmpty(author))
-            errors["author"] = ["Author is required."];
-        else if (author.Length > LogEntry.AuthorMaxLength)
-            errors["author"] = [$"Author must be {LogEntry.AuthorMaxLength} characters or fewer."];
+        if (!authorFromToken)
+        {
+            var author = request.Author?.Trim();
+            if (string.IsNullOrEmpty(author))
+                errors["author"] = ["Author is required."];
+            else if (author.Length > LogEntry.AuthorMaxLength)
+                errors["author"] = [$"Author must be {LogEntry.AuthorMaxLength} characters or fewer."];
+        }
 
         var message = request.Message?.Trim();
         if (string.IsNullOrEmpty(message))

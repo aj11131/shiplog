@@ -2,7 +2,8 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 import { EntriesService, LogEntry } from './entries.service';
-import { sampleEntry } from '../testing/fixtures';
+import { AuthService } from '../core/auth.service';
+import { fakeAuth, sampleEntry } from '../testing/fixtures';
 import { LogPage } from './log-page';
 
 describe('LogPage', () => {
@@ -29,7 +30,10 @@ describe('LogPage', () => {
     entriesService = { list: vi.fn(), create: vi.fn(), delete: vi.fn() };
     TestBed.configureTestingModule({
       imports: [LogPage],
-      providers: [{ provide: EntriesService, useValue: entriesService }],
+      providers: [
+        { provide: EntriesService, useValue: entriesService },
+        { provide: AuthService, useValue: fakeAuth({ enabled: false }) },
+      ],
     });
   });
 
@@ -98,5 +102,63 @@ describe('LogPage', () => {
     expect(
       (fixture.nativeElement as HTMLElement).querySelector('[role=alert]')?.textContent,
     ).toContain('the API is unreachable');
+  });
+
+  it('hides Delete on entries the caller may not delete', async () => {
+    const { el } = await render([{ ...sampleEntry, canDelete: false }]);
+
+    expect(el.querySelector('.entry .link')).toBeNull();
+  });
+});
+
+describe('LogPage with sign-in enabled', () => {
+  let entriesService: { list: ReturnType<typeof vi.fn>; create: ReturnType<typeof vi.fn> };
+  let auth: ReturnType<typeof fakeAuth>;
+
+  async function render() {
+    const fixture = TestBed.createComponent(LogPage);
+    await fixture.whenStable();
+    return { fixture, el: fixture.nativeElement as HTMLElement };
+  }
+
+  beforeEach(() => {
+    entriesService = { list: vi.fn().mockReturnValue(of([sampleEntry])), create: vi.fn() };
+    auth = fakeAuth({ enabled: true, signedInAs: null });
+    TestBed.configureTestingModule({
+      imports: [LogPage],
+      providers: [
+        { provide: EntriesService, useValue: entriesService },
+        { provide: AuthService, useValue: auth },
+      ],
+    });
+  });
+
+  it('asks anonymous visitors to sign in, but still shows the log', async () => {
+    const { el } = await render();
+
+    expect(el.querySelector('form')).toBeNull();
+    expect(el.querySelector('.sign-in-prompt')?.textContent).toContain('Sign in to add entries');
+    expect(el.querySelector('.entry')?.textContent).toContain('Land ho!');
+
+    el.querySelector<HTMLButtonElement>('.sign-in-prompt button')!.click();
+    expect(auth.signIn).toHaveBeenCalled();
+  });
+
+  it('lets signed-in users write without an author field', async () => {
+    auth.signInAs('Alice');
+    entriesService.create.mockReturnValue(of({ ...sampleEntry, id: 'new', author: 'Alice' }));
+    const { fixture, el } = await render();
+
+    expect(el.querySelector('input[formcontrolname=author]')).toBeNull();
+    expect(el.textContent).toContain('Writing as Alice');
+
+    const textarea = el.querySelector<HTMLTextAreaElement>('textarea')!;
+    textarea.value = 'Signed and sealed';
+    textarea.dispatchEvent(new Event('input'));
+    el.querySelector<HTMLFormElement>('form')!.dispatchEvent(new Event('submit'));
+    await fixture.whenStable();
+
+    // No author is sent: the API takes it from the token.
+    expect(entriesService.create).toHaveBeenCalledWith({ message: 'Signed and sealed' });
   });
 });

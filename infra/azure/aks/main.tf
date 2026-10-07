@@ -153,6 +153,20 @@ module "aks" {
     upgrade_settings = { max_surge = "1" }
   }
 
+  # --- Ingress: Gateway API ---------------------------------------------------
+  # AKS installs and upgrades the Gateway API CRDs ("Standard" channel) and runs a managed,
+  # sidecar-free Istio control plane that turns our Gateway resources into Envoy proxies
+  # behind an Azure load balancer (GatewayClass "approuting-istio"). This is the supported
+  # successor to the managed NGINX ingress, which loses support in November 2026.
+  ingress_profile = {
+    gateway_api = { installation = "Standard" }
+    web_app_routing = {
+      gateway_api_implementations = {
+        app_routing_istio = { mode = "Enabled" }
+      }
+    }
+  }
+
   # On: patch-version Kubernetes upgrades and weekly node-image updates, applied automatically.
   # Off: nothing is upgraded until you trigger it (az aks upgrade / az aks nodepool upgrade --node-image-only).
   auto_upgrade_profile = var.auto_upgrades ? {
@@ -174,6 +188,14 @@ resource "azurerm_role_assignment" "kubelet_acr_pull" {
   role_definition_name = "AcrPull"
   principal_id         = module.aks.kubelet_identity.objectId
   principal_type       = "ServicePrincipal"
+
+  # The AVM module's outputs become "(known after apply)" whenever the cluster has ANY
+  # in-place change (e.g. enabling Gateway API), which would make Terraform needlessly
+  # REPLACE this assignment and briefly break image pulls. The kubelet identity is fixed
+  # for the cluster's lifetime; destroying the cluster destroys this resource too.
+  lifecycle {
+    ignore_changes = [principal_id]
+  }
 }
 
 # Humans who may administer the cluster with kubectl.
@@ -217,6 +239,11 @@ resource "azurerm_federated_identity_credential" "otel" {
   issuer                    = module.aks.oidc_issuer_profile_issuer_url
   audience                  = ["api://AzureADTokenExchange"]
   subject                   = "system:serviceaccount:${var.otel_namespace}:${var.otel_service_account}"
+
+  # Same reason as kubelet_acr_pull: the issuer URL is fixed for the cluster's lifetime.
+  lifecycle {
+    ignore_changes = [issuer]
+  }
 }
 
 # The only permission the collector has: write telemetry through this one Data Collection Rule.

@@ -16,8 +16,8 @@ Users post short entries to a shared ship's log. Every entry is stamped with the
 |---|---|---|
 | 1 | App code, unit tests, Docker Compose, local telemetry | ✅ [notes](docs/01-local-app.md) |
 | 2 | Helm chart on a local kind cluster | ✅ [notes](docs/02-helm-kind.md) |
-| 3 | Terraform + CI/CD for AKS, Azure observability stack | 🚧 [notes & setup](docs/03-aks-terraform.md) |
-| 4 | Entra ID sign-in | ⏳ |
+| 3 | Terraform + CI/CD for AKS, Azure observability stack | ✅ [notes & setup](docs/03-aks-terraform.md) |
+| 4 | Entra ID sign-in + HTTPS (Gateway API, cert-manager) | 🚧 [notes & setup](docs/04-entra-https.md) |
 | 5 | Add EKS | ⏳ |
 | 6 | Experiments | ⏳ |
 
@@ -85,10 +85,12 @@ compose*.yaml       Local container stack
 docs/               Per-step learning notes
 .github/workflows/  CI/CD
 charts/shiplog/     Helm chart (+ postgres subchart)
+charts/gateway/     shared HTTPS Gateway + Let's Encrypt issuer
 deploy/kind/        kind cluster config
 deploy/otel-collector/  OpenTelemetry Collector values (Azure Monitor)
+deploy/cert-manager/    cert-manager values (Let's Encrypt via Gateway API)
 scripts/            kind-up.ps1 / kind-down.ps1
 infra/bootstrap/    one-time: state storage + GitHub OIDC identities
-infra/azure/        observability + aks stacks
+infra/azure/        observability, identity (Entra) and aks stacks
 infra/modules/      reusable Terraform modules
 ```
